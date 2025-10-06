@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2025-10-06
+
+### Added
+- 🎥 **YouTube Support**: Download and transcribe YouTube videos directly with just a URL
+- Support for youtube.com, youtu.be, and youtube.com/shorts URLs
+- Automatic audio-only download for faster processing
+- Real-world use case documentation for large video files
+
+### Changed
+- **BREAKING**: Package now includes ytdl-core dependency (increases bundle size to ~2MB)
+- Improved error messages with links to get API key and setup instructions
+- Better configuration documentation with step-by-step guide
+- Enhanced comparison table with YouTube support row
+
+### Fixed
+- More helpful error message when API key is not configured
+- Added verification steps for config file setup
+
 ## [1.0.3] - 2025-10-06
 
 ### Fixed

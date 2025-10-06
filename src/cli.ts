@@ -9,10 +9,11 @@
  * Requires: OPENAI_API_KEY environment variable
  */
 
-import { existsSync } from 'fs'
+import { existsSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { transcribe } from './transcribe'
+import { isYouTubeUrl, downloadYouTubeAudio } from './youtube'
 
 function getApiKey(): string {
   // Try environment variable first
@@ -33,12 +34,15 @@ function getApiKey(): string {
   
   if (!apiKey) {
     throw new Error(
-      'OPENAI_API_KEY not found. Please set it as an environment variable:\n' +
-      '  export OPENAI_API_KEY=sk-...\n\n' +
-      'Or create a config file at ~/.transcribe/config.json:\n' +
-      '  {\n' +
-      '    "apiKey": "sk-..."\n' +
-      '  }'
+      'OPENAI_API_KEY not found.\n\n' +
+      '🔑 Get your API key: https://platform.openai.com/api-keys\n\n' +
+      'Then set it using ONE of these methods:\n\n' +
+      '1️⃣  Environment variable (recommended for one-time use):\n' +
+      '   export OPENAI_API_KEY=sk-...\n\n' +
+      '2️⃣  Config file (recommended for permanent setup):\n' +
+      '   mkdir -p ~/.transcribe\n' +
+      '   echo \'{"apiKey": "sk-..."}\' > ~/.transcribe/config.json\n\n' +
+      '📚 Full setup guide: https://github.com/Illyism/transcribe-cli#configuration'
     )
   }
   
@@ -52,7 +56,7 @@ async function main() {
     console.log(`
 Transcribe - Audio/Video to SRT
 
-Usage: transcribe <path-to-file> [options]
+Usage: transcribe <path-to-file-or-youtube-url> [options]
 
 Options:
   -h, --help     Show this help message
@@ -62,8 +66,10 @@ Examples:
   transcribe video.mp4
   transcribe audio.mp3
   transcribe /path/to/podcast.wav
+  transcribe https://www.youtube.com/watch?v=VIDEO_ID
 
 Supported formats: mp4, mp3, wav, m4a, webm, ogg, mov, avi, mkv
+YouTube: youtube.com, youtu.be, youtube.com/shorts
 
 Configuration:
   Set OPENAI_API_KEY environment variable or create ~/.transcribe/config.json
@@ -77,15 +83,22 @@ Configuration:
     process.exit(0)
   }
   
-  const inputPath = args[0]
-  
-  if (!existsSync(inputPath)) {
-    console.error(`Error: File not found: ${inputPath}`)
-    process.exit(1)
-  }
+  const input = args[0]
+  let inputPath = input
+  let downloadedFile: string | null = null
   
   try {
     const apiKey = getApiKey()
+    
+    // Check if input is a YouTube URL
+    if (isYouTubeUrl(input)) {
+      downloadedFile = await downloadYouTubeAudio(input)
+      inputPath = downloadedFile
+    } else if (!existsSync(inputPath)) {
+      console.error(`Error: File not found: ${inputPath}`)
+      process.exit(1)
+    }
+    
     const result = await transcribe({ inputPath, apiKey })
     
     console.log(`\n✅ SRT file saved to: ${result.srtPath}`)
@@ -99,6 +112,12 @@ Configuration:
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : String(error))
     process.exit(1)
+  } finally {
+    // Clean up downloaded YouTube file
+    if (downloadedFile && existsSync(downloadedFile)) {
+      unlinkSync(downloadedFile)
+      console.log('🧹 Cleaned up downloaded file')
+    }
   }
 }
 

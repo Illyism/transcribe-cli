@@ -14,15 +14,17 @@ While OpenAI's Whisper has multiple ways to use it, this tool provides a **simpl
 |---------|---------------------|---------------------|----------------------------|
 | **Setup** | Zero setup with `npx`/`bunx` | Install Python package | Download models (~1-5GB) |
 | **Video Support** | ✅ Automatic with FFmpeg | ❌ Audio only | ❌ Audio only |
+| **YouTube Support** | ✅ Built-in | ❌ Manual download | ❌ Manual download |
 | **SRT Output** | ✅ Built-in | ❌ Manual formatting | ✅ Available |
 | **Processing** | ☁️ Cloud (fast) | ☁️ Cloud (fast) | 💻 Local (slower) |
 | **Cost** | $0.006/min | $0.006/min | Free (after setup) |
 | **Internet Required** | ✅ Yes | ✅ Yes | ❌ No |
-| **Best For** | Quick tasks, videos | API integration | Privacy, offline use |
+| **Best For** | Quick tasks, videos, YouTube | API integration | Privacy, offline use |
 
 ### Key Advantages
 
 - 🎬 **Handles videos directly** - No need to manually extract audio
+- 🎥 **YouTube support** - Transcribe YouTube videos with just the URL
 - 📝 **SRT format ready** - Generates subtitles automatically
 - 🚀 **Zero installation** - Just run `npx @illyism/transcribe video.mp4`
 - 🔧 **Simple config** - One-time API key setup
@@ -44,6 +46,7 @@ This tool:
 ## Features
 
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
+- 🎥 **YouTube Support**: Download and transcribe YouTube videos directly
 - 🎯 **High Accuracy**: Powered by OpenAI's Whisper API
 - ⚡ **Fast Processing**: Efficient audio extraction with FFmpeg
 - 📝 **SRT Format**: Generates standard SRT subtitle files with precise timestamps
@@ -98,30 +101,48 @@ npm install @illyism/transcribe
 
 ## Configuration
 
-### Option 1: Environment Variable (Recommended)
+You need an OpenAI API key to use this tool. **Don't have one yet?**
+
+👉 **[Get your API key here](https://platform.openai.com/api-keys)** (it's free to start!)
+
+Once you have your key, choose one of these setup methods:
+
+### Option 1: Config File (Recommended for Regular Use)
+
+This saves your API key permanently so you don't have to set it every time:
 
 ```bash
-export OPENAI_API_KEY='sk-...'
-```
-
-Add to your `~/.zshrc` or `~/.bashrc` to make it permanent:
-
-```bash
-echo 'export OPENAI_API_KEY="sk-..."' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### Option 2: Config File
-
-Create a config file at `~/.transcribe/config.json`:
-
-```bash
+# Create the config directory and file
 mkdir -p ~/.transcribe
-cat > ~/.transcribe/config.json << EOF
-{
-  "apiKey": "sk-..."
-}
-EOF
+echo '{"apiKey": "sk-YOUR_KEY_HERE"}' > ~/.transcribe/config.json
+
+# Replace sk-YOUR_KEY_HERE with your actual key
+```
+
+**Verify it worked:**
+```bash
+cat ~/.transcribe/config.json
+# Should show: {"apiKey": "sk-..."}
+```
+
+### Option 2: Environment Variable (One-time Use)
+
+For temporary use or CI/CD pipelines:
+
+```bash
+export OPENAI_API_KEY='sk-YOUR_KEY_HERE'
+```
+
+**Make it permanent** (add to your shell config):
+
+```bash
+# For zsh (macOS default)
+echo 'export OPENAI_API_KEY="sk-YOUR_KEY_HERE"' >> ~/.zshrc
+source ~/.zshrc
+
+# For bash
+echo 'export OPENAI_API_KEY="sk-YOUR_KEY_HERE"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Usage
@@ -157,6 +178,15 @@ transcribe interview.mp3
 
 # Transcribe with full path
 transcribe ~/Documents/meeting.wav
+
+# Transcribe a YouTube video
+transcribe https://www.youtube.com/watch?v=bAYZjVAodoo
+
+# YouTube Shorts also work
+transcribe https://www.youtube.com/shorts/VIDEO_ID
+
+# Short YouTube URLs
+transcribe https://youtu.be/bAYZjVAodoo
 ```
 
 ### Programmatic Usage
@@ -227,6 +257,7 @@ I'll take a look at your website and see what things we can improve.
 
 - **Video**: MP4, WebM, MOV, AVI, MKV
 - **Audio**: MP3, WAV, M4A, OGG
+- **YouTube**: All YouTube videos, Shorts, and youtu.be links
 
 ## Cost
 

@@ -38,6 +38,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "openai": "^4.0.0"
   },
   "peerDependencies": {
