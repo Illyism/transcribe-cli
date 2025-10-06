@@ -1,0 +1,50 @@
+{
+  "name": "@illyism/transcribe",
+  "version": "1.0.0",
+  "description": "CLI tool to transcribe audio/video files to SRT format using OpenAI Whisper API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "transcribe": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "bun build src/cli.ts --outdir dist --target node --format esm && bun build src/index.ts --outdir dist --target node --format esm && chmod +x dist/cli.js",
+    "dev": "bun src/cli.ts",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "transcribe",
+    "whisper",
+    "openai",
+    "srt",
+    "subtitles",
+    "audio",
+    "video",
+    "speech-to-text",
+    "cli"
+  ],
+  "author": "Ilias Ismanalijev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/magicspace/transcribe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/magicspace/transcribe/issues"
+  },
+  "homepage": "https://github.com/magicspace/transcribe#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "openai": "^4.0.0"
+  },
+  "peerDependencies": {
+    "ffmpeg": "*"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
