@@ -57,8 +57,17 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
           errorMsg += '\nInput file not found or output directory does not exist.'
         } else if (errorOutput.includes('Invalid data found')) {
           errorMsg += '\nInvalid or corrupted video file.'
-        } else if (code === 234) {
-          errorMsg += '\nFFmpeg conversion failed. Make sure FFmpeg is installed and the video file is valid.'
+        } else if (errorOutput.includes('does not contain any stream')) {
+          errorMsg += '\nVideo file does not contain a valid audio or video stream.'
+        } else {
+          // Show last few lines of FFmpeg output for debugging
+          const lines = errorOutput.trim().split('\n')
+          const relevantLines = lines.slice(-5).join('\n')
+          if (relevantLines) {
+            errorMsg += '\n\nFFmpeg output:\n' + relevantLines
+          } else {
+            errorMsg += '\nFFmpeg conversion failed. Make sure FFmpeg is installed and the video file is valid.'
+          }
         }
         
         reject(new Error(errorMsg))
