@@ -1,5 +1,9 @@
 # @illyism/transcribe
 
+[![npm version](https://img.shields.io/npm/v/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
+[![npm downloads](https://img.shields.io/npm/dt/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A fast, simple CLI tool to transcribe audio and video files to SRT subtitle format using OpenAI's Whisper API.
 
 ## Features
