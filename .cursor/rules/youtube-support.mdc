@@ -1,0 +1,72 @@
+---
+globs: src/youtube.ts,src/cli.ts
+---
+
+# YouTube Integration
+
+## URL Detection
+
+See [src/youtube.ts](mdc:src/youtube.ts):
+
+```typescript
+function isYouTubeUrl(input: string): boolean {
+  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[\w-]+/
+  return youtubeRegex.test(input)
+}
+```
+
+Supports:
+- `https://youtube.com/watch?v=VIDEO_ID`
+- `https://www.youtube.com/watch?v=VIDEO_ID`
+- `https://youtu.be/VIDEO_ID`
+- `https://youtube.com/shorts/VIDEO_ID`
+- Without `https://` prefix
+
+## Download Strategy
+
+Always download **audio-only** for faster processing:
+
+```typescript
+const audioStream = ytdl(url, {
+  quality: 'highestaudio',
+  filter: 'audioonly'
+})
+```
+
+This is much faster than downloading entire video (2-4GB → ~20-40MB).
+
+## Temporary File Management
+
+YouTube downloads go to system temp directory:
+```typescript
+const outputPath = join(tmpdir(), `${title}_${Date.now()}.mp3`)
+```
+
+**Must be cleaned up** after transcription:
+```typescript
+finally {
+  if (downloadedFile && existsSync(downloadedFile)) {
+    unlinkSync(downloadedFile)
+    console.log('🧹 Cleaned up downloaded file')
+  }
+}
+```
+
+## File Naming
+
+YouTube video titles are sanitized:
+```typescript
+const title = info.videoDetails.title
+  .replace(/[^\w\s-]/g, '')  // Remove special chars
+  .replace(/\s+/g, '_')       // Replace spaces with underscores
+```
+
+## User Experience
+
+Show progress during YouTube download:
+```
+🎥 Fetching YouTube video info...
+📹 Downloading: Video Title Here
+⏱️  Duration: 21 minutes
+✅ Download complete!
+```

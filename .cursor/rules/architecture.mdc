@@ -1,0 +1,50 @@
+---
+alwaysApply: true
+---
+
+# @illyism/transcribe - Project Architecture
+
+## Package Structure
+
+This is a dual-mode package (CLI + Library):
+
+### Core Files
+
+- **[src/cli.ts](mdc:src/cli.ts)**: CLI entry point with argument parsing and user-facing commands
+- **[src/transcribe.ts](mdc:src/transcribe.ts)**: Core transcription logic with automatic optimization
+- **[src/optimize.ts](mdc:src/optimize.ts)**: Audio optimization (1.2x speed) and SRT timestamp adjustment
+- **[src/youtube.ts](mdc:src/youtube.ts)**: YouTube video download and audio extraction
+- **[src/types.ts](mdc:src/types.ts)**: TypeScript interfaces for Whisper API responses
+- **[src/index.ts](mdc:src/index.ts)**: Library entry point with public API exports
+
+### Key Patterns
+
+1. **Optimization by Default**: All files are automatically optimized with 1.2x speed unless `--raw` flag is used
+2. **Automatic Cleanup**: All temporary files (extracted audio, optimized audio, downloaded files) are cleaned up in `finally` blocks
+3. **Progressive Enhancement**: Works with local files, videos, and YouTube URLs
+4. **Error Messages**: Include helpful links and copy-paste commands for setup
+
+## Data Flow
+
+```
+Input → YouTube Download (if URL) → Extract Audio (if video) → Optimize (if enabled) → Whisper API → SRT Generation → Timestamp Adjustment → Cleanup
+```
+
+## Dependencies
+
+- **openai**: Official OpenAI SDK for Whisper API
+- **@distube/ytdl-core**: YouTube video/audio download
+- **FFmpeg** (peer): Required for video/audio processing
+
+## Build Process
+
+- Uses Bun to bundle to ESM format
+- Targets Node.js 18+
+- Two outputs: `cli.js` (executable) and `index.js` (library)
+- CLI has shebang: `#!/usr/bin/env node`
+
+## Testing
+
+- **[test/](mdc:test/)**: A/B testing suite for optimization strategies
+- Includes baseline, speed, and Opus compression tests
+- Generates comparison reports and recommendations

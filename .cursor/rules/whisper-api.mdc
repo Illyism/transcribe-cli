@@ -1,0 +1,65 @@
+---
+description: OpenAI Whisper API integration patterns and supported formats
+---
+
+# Whisper API Integration
+
+## Supported Formats
+
+OpenAI Whisper API accepts:
+- `flac`, `m4a`, `mp3`, `mp4`, `mpeg`, `mpga`, `oga`, `ogg`, `wav`, `webm`
+
+**Important**: `opus` files are NOT supported directly. Use `ogg` container with Opus codec instead:
+```bash
+ffmpeg -i input.mp3 -acodec libopus -f ogg output.ogg
+```
+
+## API Call Pattern
+
+See [src/transcribe.ts](mdc:src/transcribe.ts):
+
+```typescript
+const { default: OpenAI } = await import('openai')
+const openai = new OpenAI({ apiKey })
+
+const fs = await import('fs')
+const audioFile = fs.createReadStream(audioPath)
+
+const transcription = await openai.audio.transcriptions.create({
+  file: audioFile,
+  model: 'whisper-1',
+  response_format: 'verbose_json',
+  timestamp_granularities: ['segment']  // Required for SRT timestamps
+})
+```
+
+## Response Format
+
+Always use `verbose_json` with `segment` granularity to get:
+- Segment-level timestamps (required for SRT)
+- Language detection
+- Full transcription text
+- Individual segment texts
+
+## Cost
+
+- $0.006 per minute of audio
+- Charged based on ORIGINAL audio duration (not sped-up duration)
+- No additional charges for multiple calls or retries
+
+## Error Handling
+
+Common errors:
+- **400 Invalid file format**: Check file extension matches actual format
+- **502 Bad Gateway**: OpenAI API temporary issue, retry after delay
+- **401 Unauthorized**: Invalid API key
+- **413 Request Entity Too Large**: File too large (max ~25MB recommended)
+
+## File Size Optimization
+
+To stay under 25MB and speed up uploads:
+1. Extract audio from video (removes video track)
+2. Speed up by 1.2x (reduces duration by 17%)
+3. Or use Opus compression at ~64kbps
+
+See [src/optimize.ts](mdc:src/optimize.ts) for implementation.

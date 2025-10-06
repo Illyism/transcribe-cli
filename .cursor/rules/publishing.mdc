@@ -1,0 +1,70 @@
+---
+description: How to publish and version the package
+---
+
+# Publishing Workflow
+
+## Version Strategy
+
+Follow semantic versioning strictly:
+
+- **Patch** (3.0.0 → 3.0.1): Bug fixes, documentation updates
+- **Minor** (3.0.0 → 3.1.0): New features, backward compatible
+- **Major** (3.0.0 → 4.0.0): Breaking changes
+
+### Breaking Changes
+
+Examples of breaking changes:
+- Changing default behavior (like enabling optimization by default)
+- Removing or renaming CLI flags
+- Changing API function signatures
+- Changing output format
+
+## Publishing Commands
+
+```bash
+cd /Users/illyism/Products/magicspace/magicspace-old/packages/transcribe
+
+# 1. Version bump
+npm version major  # or minor, or patch
+
+# 2. Build (happens automatically via prepublishOnly)
+# bun run build
+
+# 3. Publish
+npm publish
+
+# 4. Push to GitHub
+git push && git push --tags
+
+# 5. Create GitHub release
+gh release create v3.0.0 --title "..." --notes "..."
+```
+
+## Pre-Publish Checklist
+
+- [ ] All changes committed
+- [ ] Tests pass (run manual tests in test/)
+- [ ] CHANGELOG.md updated
+- [ ] README.md updated with new features
+- [ ] No API keys or secrets in code
+- [ ] Build succeeds (`bun run build`)
+- [ ] Help text is current (`--help`)
+
+## Files Included in Package
+
+See `.npmignore`:
+- ✅ `dist/` (compiled code)
+- ✅ `README.md`
+- ✅ `LICENSE`
+- ❌ `src/` (source code)
+- ❌ `test/` (test suite)
+- ❌ `.env`, `.env.*`
+
+## GitHub Integration
+
+Always create a release after publishing:
+- Tag matches npm version (v3.0.0)
+- Include changelog in release notes
+- Link to NPM package
+- Mention breaking changes prominently

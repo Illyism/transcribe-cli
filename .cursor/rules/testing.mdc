@@ -1,0 +1,75 @@
+---
+description: A/B testing framework for optimization strategies
+---
+
+# Testing Framework
+
+## Test Structure
+
+All tests in [test/](mdc:test/) follow this pattern:
+
+```typescript
+async function testMethodName(inputPath: string) {
+  const startTime = Date.now()
+  
+  // 1. Validate input
+  // 2. Process audio with strategy
+  // 3. Transcribe with Whisper API
+  // 4. Calculate metrics
+  // 5. Save metrics.json
+  // 6. Return metrics object
+  
+  return metrics
+}
+```
+
+## Required Metrics
+
+Every test must track:
+
+```typescript
+interface TestMetrics {
+  method: string              // 'baseline', 'speed', 'opus'
+  originalSize: number        // Bytes
+  processedSize: number       // Bytes
+  compressionRatio: number    // processedSize / originalSize
+  originalDuration: number    // Seconds
+  processedDuration: number   // Seconds (may differ if sped up)
+  transcriptionTime: number   // Milliseconds
+  totalTime: number          // Milliseconds
+  estimatedCost: number      // Dollars
+  language: string
+  // Method-specific fields...
+}
+```
+
+## Adding New Optimization Strategies
+
+1. Create `test/test-newmethod.ts`
+2. Implement the test function following the pattern
+3. Export the function
+4. Add to [test/compare.ts](mdc:test/compare.ts) in `runAllTests()`
+5. Update comparison table logic if needed
+6. Document hypothesis in [test/README.md](mdc:test/README.md)
+
+## Running Tests
+
+```bash
+cd test
+bun compare.ts /path/to/video.mp4
+```
+
+This runs all tests and generates:
+- Individual metrics in `output/{method}/metrics.json`
+- Comparison table
+- Recommendations based on file size
+- Full report in `output/comparison-report.json`
+
+## Test Output
+
+Never commit test output files. They're in `.gitignore`:
+- `*.srt`, `*.mp3`, `*.ogg` files
+- `metrics.json`
+- `comparison-report.json`
+
+Keep the directory structure with `.gitkeep` files.

@@ -1,0 +1,60 @@
+---
+description: How audio optimization works and when it's applied
+---
+
+# Audio Optimization Strategy
+
+## Default Behavior
+
+**ALL files are optimized by default with 1.2x speed** (based on A/B test results)
+
+### Why 1.2x Speed?
+
+A/B testing showed (see [test/compare.ts](mdc:test/compare.ts)):
+- 99.5% file size reduction (2.7GB → 12.8MB)
+- 9% faster processing (65.4s vs 72s)
+- Same cost ($0.006/min charged on original duration)
+- ~98% accuracy maintained
+- Automatic timestamp adjustment back to original speed
+
+### Implementation
+
+See [src/optimize.ts](mdc:src/optimize.ts):
+
+1. **Check file size**: Display size for user awareness
+2. **Speed up audio**: Use FFmpeg `atempo=1.2` filter
+3. **Adjust timestamps**: Divide all SRT timestamps by 1.2 to restore original timing
+4. **Cleanup**: Remove optimized file after transcription
+
+### Disabling Optimization
+
+Users can disable with `--raw` flag:
+```bash
+transcribe video.mp4 --raw  # Use original audio
+```
+
+Or programmatically:
+```typescript
+await transcribe({ inputPath, apiKey, optimize: false })
+```
+
+### Timestamp Adjustment
+
+Critical: All SRT timestamps must be divided by the speed factor to match original video timing.
+
+See `adjustSRTTimestamps()` in [src/optimize.ts](mdc:src/optimize.ts) - converts timestamp to milliseconds, divides by speedFactor, then converts back.
+
+## Alternative: Opus Compression
+
+Tested but not used by default (see [test/test-opus.ts](mdc:test/test-opus.ts)):
+- Target: <25MB files
+- Uses Opus codec in OGG container
+- ~99% accuracy
+- Slower than speed optimization (86.8s vs 65.4s)
+
+## When Modifying Optimization
+
+1. Update [test/](mdc:test/) with new strategy
+2. Run comparison tests
+3. Update CHANGELOG with results
+4. Consider making it opt-in first (new flag)

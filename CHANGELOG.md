@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2025-10-06
+
+### Added
+- ⚡ **Automatic Optimization**: All files now optimized with 1.2x speed by default
+- 99.5% file size reduction (2.7GB → 12.8MB)
+- 9% faster processing time
+- Automatic SRT timestamp adjustment back to original speed
+- New `--raw` flag to disable optimization
+- A/B testing suite with baseline, speed, and Opus tests
+- Comparison tool with recommendations
+- Cursor rules (.mdc) for better codebase navigation
+
+### Changed
+- **BREAKING**: Optimization now enabled by default for all files
+- Users must use `--raw` flag to get original audio behavior
+- Improved configuration error messages with setup links
+- Better help text with optimization status
+
+### Performance
+- Based on A/B test results with 2.7GB, 22-min video:
+  - Baseline: 72s, 15.13 MB
+  - Speed (1.2x): 65.4s, 12.81 MB (9% faster, 15% smaller)
+  - Opus: 86.8s, 14.27 MB
+- Winner: Speed optimization (fastest + smallest)
+
 ## [2.0.0] - 2025-10-06
 
 ### Added

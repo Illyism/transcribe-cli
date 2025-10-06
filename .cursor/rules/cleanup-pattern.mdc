@@ -1,0 +1,57 @@
+---
+description: How to properly clean up temporary files in transcribe functions
+---
+
+# Cleanup Pattern
+
+## Always Use `finally` Blocks
+
+All temporary files MUST be cleaned up in `finally` blocks:
+
+```typescript
+let tempFile: string | null = null
+let optimizedFile: string | null = null
+
+try {
+  // Processing logic...
+  tempFile = createTempFile()
+  optimizedFile = processFile(tempFile)
+  // ...
+} finally {
+  // Clean up in reverse order of creation
+  if (tempFile && existsSync(tempFile)) {
+    unlinkSync(tempFile)
+  }
+  if (optimizedFile && existsSync(optimizedFile)) {
+    unlinkSync(optimizedFile)
+  }
+  if (tempFile || optimizedFile) {
+    console.log('🧹 Cleaned up temporary files')
+  }
+}
+```
+
+## Temporary File Naming
+
+Use timestamps to avoid conflicts:
+```typescript
+const tempPath = join(dir, `temp_${Date.now()}.mp3`)
+const optimizedPath = join(dir, `optimized_${Date.now()}.mp3`)
+```
+
+## Files to Clean Up
+
+1. **Extracted audio** from videos (`*_temp.mp3`)
+2. **Optimized audio** after speed adjustment (`optimized_*.mp3`)
+3. **Downloaded YouTube files** from temp directory
+4. **Test output files** (in test suite only)
+
+## Never Delete
+
+- Original input files
+- Generated SRT files
+- User-specified output paths
+
+## Error Handling
+
+Even if an error occurs, cleanup MUST run. That's why we use `finally` blocks, not just at the end of the function.
