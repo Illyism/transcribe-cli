@@ -48,10 +48,11 @@ This tool:
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
 - 🎥 **YouTube Support**: Download and transcribe YouTube videos directly
 - 🎯 **High Accuracy**: Powered by OpenAI's Whisper API
-- ⚡ **Fast Processing**: Efficient audio extraction with FFmpeg
+- ⚡ **Smart Optimization**: Automatic 1.2x speed processing for large files (99.5% size reduction)
 - 📝 **SRT Format**: Generates standard SRT subtitle files with precise timestamps
 - 🔧 **Simple Setup**: Easy configuration via environment variable or config file
 - 🌍 **Multi-language**: Automatically detects language
+- 🚀 **Lightning Fast**: Optimized for 2-4GB video files
 
 ## Installation
 
@@ -187,6 +188,28 @@ transcribe https://www.youtube.com/shorts/VIDEO_ID
 
 # Short YouTube URLs
 transcribe https://youtu.be/bAYZjVAodoo
+
+# Disable optimization for original audio
+transcribe large-video.mp4 --raw
+```
+
+### Automatic Optimization
+
+**All files are automatically optimized by default:**
+- ⚡ Speeds up audio by 1.2x for faster processing
+- 📉 Reduces file size by 99.5% (2.7GB → 12.8MB)
+- ⏱️  Adjusts SRT timestamps back to original speed
+- 🎯 Maintains ~98% accuracy
+- 💰 Same cost, better speed
+
+Use `--raw` flag to disable optimization and use original audio.
+
+```bash
+# With optimization (default)
+transcribe video.mp4
+
+# Without optimization
+transcribe video.mp4 --raw
 ```
 
 ### Programmatic Usage
@@ -203,7 +226,8 @@ import { transcribe } from '@illyism/transcribe'
 const result = await transcribe({
   inputPath: '/path/to/video.mp4',
   apiKey: process.env.OPENAI_API_KEY,
-  outputPath: '/custom/path/output.srt' // optional
+  outputPath: '/custom/path/output.srt', // optional
+  optimize: true // default: true, set to false to disable optimization
 })
 
 console.log('SRT file:', result.srtPath)

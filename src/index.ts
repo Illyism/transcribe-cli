@@ -7,6 +7,7 @@ export interface TranscribeOptions {
   apiKey?: string
   inputPath: string
   outputPath?: string
+  optimize?: boolean
 }
 
 export interface TranscribeResult {

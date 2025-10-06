@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { TranscribeOptions, TranscribeResult } from './index'
+import { adjustSRTTimestamps, optimizeAudio } from './optimize'
 import type { WhisperResponse } from './types'
 
 function formatTime(seconds: number): string {
@@ -122,7 +123,7 @@ async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise
  * ```
  */
 export async function transcribe(options: TranscribeOptions): Promise<TranscribeResult> {
-  const { inputPath, apiKey, outputPath } = options
+  const { inputPath, apiKey, outputPath, optimize = true } = options
   
   if (!existsSync(inputPath)) {
     throw new Error(`File not found: ${inputPath}`)
@@ -141,6 +142,8 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   
   let audioPath = inputPath
   let tempAudioPath: string | null = null
+  let optimizedPath: string | null = null
+  let speedFactor = 1.0
   
   // Extract audio if it's a video file
   if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
@@ -155,28 +158,52 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   }
   
   try {
+    // Optimize audio if enabled
+    if (optimize) {
+      const optimized = await optimizeAudio(audioPath)
+      if (optimized.path !== audioPath) {
+        optimizedPath = optimized.path
+        audioPath = optimized.path
+      }
+      speedFactor = optimized.speedFactor
+    }
+    
     // Transcribe with Whisper
     console.log('🎙️  Transcribing with OpenAI Whisper API...')
     const transcription = await transcribeWithWhisper(audioPath, apiKey)
     console.log(`✅ Transcription complete! Language: ${transcription.language}, Duration: ${transcription.duration.toFixed(2)}s`)
     
     // Convert to SRT format
-    const srt = convertToSRT(transcription)
+    let srt = convertToSRT(transcription)
+    
+    // Adjust timestamps if audio was sped up
+    if (speedFactor !== 1.0) {
+      console.log(`⏱️  Adjusting timestamps back to original speed...`)
+      srt = adjustSRTTimestamps(srt, speedFactor)
+    }
     
     // Save SRT file
     const srtPath = outputPath || inputPath.substring(0, inputPath.lastIndexOf('.')) + '.srt'
     await writeFile(srtPath, srt, 'utf-8')
     
+    // Calculate original duration if sped up
+    const originalDuration = transcription.duration * speedFactor
+    
     return {
       srtPath,
       text: transcription.text,
       language: transcription.language,
-      duration: transcription.duration
+      duration: originalDuration
     }
   } finally {
-    // Clean up temporary audio file if created
+    // Clean up temporary files
     if (tempAudioPath && existsSync(tempAudioPath)) {
       unlinkSync(tempAudioPath)
+    }
+    if (optimizedPath && existsSync(optimizedPath)) {
+      unlinkSync(optimizedPath)
+    }
+    if (tempAudioPath || optimizedPath) {
       console.log('🧹 Cleaned up temporary files')
     }
   }

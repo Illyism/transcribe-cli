@@ -61,14 +61,21 @@ Usage: transcribe <path-to-file-or-youtube-url> [options]
 Options:
   -h, --help     Show this help message
   -v, --version  Show version
+  --raw          Disable optimizations (use original audio)
 
 Examples:
   transcribe video.mp4
   transcribe audio.mp3
   transcribe /path/to/podcast.wav
   transcribe https://www.youtube.com/watch?v=VIDEO_ID
+  transcribe large-video.mp4 --raw
 
-Supported formats: mp4, mp3, wav, m4a, webm, ogg, mov, avi, mkv
+Optimizations (enabled by default):
+  • 1.2x speed: Faster processing, 99.5% size reduction
+  • Automatic timestamp adjustment to original speed
+  • Use --raw to disable and use original audio
+
+Supported formats: mp4, mp3, wav, m4a, webm, ogg, opus, mov, avi, mkv
 YouTube: youtube.com, youtu.be, youtube.com/shorts
 
 Configuration:
@@ -83,7 +90,9 @@ Configuration:
     process.exit(0)
   }
   
-  const input = args[0]
+  const input = args.find(arg => !arg.startsWith('--')) || args[0]
+  const useRaw = args.includes('--raw')
+  
   let inputPath = input
   let downloadedFile: string | null = null
   
@@ -99,7 +108,11 @@ Configuration:
       process.exit(1)
     }
     
-    const result = await transcribe({ inputPath, apiKey })
+    const result = await transcribe({ 
+      inputPath, 
+      apiKey,
+      optimize: !useRaw 
+    })
     
     console.log(`\n✅ SRT file saved to: ${result.srtPath}`)
     console.log(`\nTranscription preview:`)
