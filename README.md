@@ -98,7 +98,22 @@ npm install @illyism/transcribe
    choco install ffmpeg
    ```
 
-2. **OpenAI API Key**: Get one at [platform.openai.com](https://platform.openai.com/api-keys)
+2. **yt-dlp** (Optional, for YouTube support): Required only if transcribing YouTube videos
+   ```bash
+   # macOS
+   brew install yt-dlp
+   
+   # Ubuntu/Debian
+   sudo apt install yt-dlp
+   
+   # Windows
+   winget install yt-dlp
+   
+   # Or with pip
+   pip install yt-dlp
+   ```
+
+3. **OpenAI API Key**: Get one at [platform.openai.com](https://platform.openai.com/api-keys)
 
 ## Configuration
 

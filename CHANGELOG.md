@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2025-10-06
+
+### Fixed
+- **YouTube Support**: Switched from ytdl-core to yt-dlp for reliable YouTube downloads
+- Smart two-stage optimization: Speed (1.2x) + Opus compression if still >24MB
+- Now handles large YouTube videos that exceed 25MB API limit
+- Automatic compression to stay under Whisper API limit
+
+### Changed
+- Removed @distube/ytdl-core dependency (unreliable)
+- Now uses system yt-dlp command (more reliable, smaller package)
+- Package size reduced: 2.0 MB → 0.77 MB
+- Better error messages for missing yt-dlp installation
+- Added yt-dlp to prerequisites in README
+
+### Performance
+- Tested with 45-min YouTube video (66.7 MB):
+  - Speed optimization: 66.7 MB → 41.6 MB
+  - Additional Opus: 41.6 MB → 22.2 MB
+  - Final: Under 24MB limit ✅
+  - Transcription successful!
+
 ## [3.0.0] - 2025-10-06
 
 ### Added

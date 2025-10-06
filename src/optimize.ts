@@ -1,8 +1,10 @@
 import { spawn } from 'child_process'
-import { statSync } from 'fs'
+import { statSync, unlinkSync } from 'fs'
 import { dirname, join } from 'path'
 
 const SPEED_FACTOR = 1.2
+const MAX_FILE_SIZE_MB = 24 // Keep under 25MB API limit
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 export async function optimizeAudio(inputPath: string): Promise<{ path: string; speedFactor: number }> {
   const fileSize = statSync(inputPath).size
@@ -10,11 +12,11 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
   
   console.log(`📊 File size: ${fileSizeMB.toFixed(2)} MB`)
   
-  // Always optimize with speed (best results from A/B testing)
+  // Always optimize with speed first (best results from A/B testing)
   console.log(`⚡ Optimizing: Speeding up audio by ${SPEED_FACTOR}x for faster processing...`)
   
   const dir = dirname(inputPath)
-  const outputPath = join(dir, `optimized_${Date.now()}.mp3`)
+  const speedOptimizedPath = join(dir, `optimized_speed_${Date.now()}.mp3`)
   
   await new Promise<void>((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
@@ -23,15 +25,15 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
       '-acodec', 'libmp3lame',
       '-q:a', '2',
       '-y',
-      outputPath
+      speedOptimizedPath
     ])
     
     ffmpeg.on('close', (code) => {
       if (code === 0) {
-        const optimizedSize = statSync(outputPath).size
+        const optimizedSize = statSync(speedOptimizedPath).size
         const optimizedSizeMB = optimizedSize / 1024 / 1024
         const reduction = ((1 - optimizedSize / fileSize) * 100).toFixed(1)
-        console.log(`✅ Optimization complete: ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
+        console.log(`✅ Speed optimization complete: ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
         resolve()
       } else {
         reject(new Error(`FFmpeg optimization failed with code ${code}`))
@@ -41,7 +43,52 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
     ffmpeg.on('error', reject)
   })
   
-  return { path: outputPath, speedFactor: SPEED_FACTOR }
+  // Check if we need additional compression (must be <25MB for Whisper API)
+  const speedOptimizedSize = statSync(speedOptimizedPath).size
+  const speedOptimizedSizeMB = speedOptimizedSize / 1024 / 1024
+  
+  if (speedOptimizedSize > MAX_FILE_SIZE_BYTES) {
+    console.log(`⚠️  File still too large (${speedOptimizedSizeMB.toFixed(2)} MB > 24 MB), applying additional compression...`)
+    
+    const finalPath = join(dir, `optimized_final_${Date.now()}.ogg`)
+    
+    // Calculate bitrate needed to stay under 24MB
+    const durationSeconds = fileSizeMB / (128 / 8) // Rough estimate: original bitrate ~128kbps
+    const targetBitrate = Math.floor((MAX_FILE_SIZE_BYTES / durationSeconds) * 8 / 1000) - 5 // -5k for safety
+    const safeBitrate = Math.max(24, Math.min(targetBitrate, 64)) // Clamp between 24-64kbps
+    
+    await new Promise<void>((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-i', speedOptimizedPath,
+        '-acodec', 'libopus',
+        '-b:a', `${safeBitrate}k`,
+        '-ac', '1', // Mono
+        '-f', 'ogg',
+        '-y',
+        finalPath
+      ])
+      
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          const finalSize = statSync(finalPath).size
+          const finalSizeMB = finalSize / 1024 / 1024
+          console.log(`✅ Additional compression complete: ${speedOptimizedSizeMB.toFixed(2)} MB → ${finalSizeMB.toFixed(2)} MB (${safeBitrate}k bitrate)`)
+          resolve()
+        } else {
+          reject(new Error(`FFmpeg compression failed with code ${code}`))
+        }
+      })
+      
+      ffmpeg.on('error', reject)
+    })
+    
+    // Clean up intermediate file
+    unlinkSync(speedOptimizedPath)
+    
+    return { path: finalPath, speedFactor: SPEED_FACTOR }
+  }
+  
+  return { path: speedOptimizedPath, speedFactor: SPEED_FACTOR }
 }
 
 export function adjustSRTTimestamps(srtContent: string, speedFactor: number): string {
