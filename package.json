@@ -1,6 +1,6 @@
 {
   "name": "@illyism/transcribe",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CLI tool to transcribe audio/video files to SRT format using OpenAI Whisper API",
   "type": "module",
   "main": "dist/index.js",
