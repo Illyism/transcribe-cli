@@ -133,7 +133,7 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   }
   
   const ext = inputPath.toLowerCase().split('.').pop()
-  const supportedFormats = ['mp4', 'mp3', 'wav', 'm4a', 'webm', 'ogg', 'mov', 'avi', 'mkv']
+  const supportedFormats = ['mp4', 'mp3', 'wav', 'm4a', 'webm', 'ogg', 'opus', 'mov', 'avi', 'mkv']
   
   if (!ext || !supportedFormats.includes(ext)) {
     throw new Error(`Unsupported format. Supported formats: ${supportedFormats.join(', ')}`)

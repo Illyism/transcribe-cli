@@ -1,0 +1,15 @@
+{
+  "method": "speed",
+  "speedFactor": 1.2,
+  "originalSize": 2902041008,
+  "processedSize": 13429580,
+  "compressionRatio": 0.004627632746394327,
+  "originalDuration": 1311.6,
+  "processedDuration": 1093,
+  "transcriptionTime": 52724,
+  "totalTime": 65446,
+  "estimatedCost": 0.13116,
+  "costPerMinute": 0.006,
+  "language": "english",
+  "timestamp": "2025-10-06T17:15:22.831Z"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@illyism/transcribe-tests",
+  "version": "1.0.0",
+  "description": "A/B testing suite for transcription optimization strategies",
+  "type": "module",
+  "scripts": {
+    "test": "bun compare.ts",
+    "baseline": "bun test-baseline.ts",
+    "speed": "bun test-speed.ts",
+    "opus": "bun test-opus.ts",
+    "compare": "bun compare.ts"
+  },
+  "keywords": [
+    "transcription",
+    "optimization",
+    "ab-testing",
+    "whisper",
+    "audio",
+    "compression"
+  ],
+  "author": "Ilias Ismanalijev",
+  "license": "MIT",
+  "dependencies": {
+    "@illyism/transcribe": "^2.0.0"
+  },
+  "peerDependencies": {
+    "ffmpeg": "*"
+  }
+}

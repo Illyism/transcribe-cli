@@ -1,0 +1,14 @@
+{
+  "method": "baseline",
+  "originalSize": 2902041008,
+  "processedSize": 2902041008,
+  "compressionRatio": 1,
+  "originalDuration": 1311.6199951171875,
+  "processedDuration": 1311.6199951171875,
+  "transcriptionTime": 72048,
+  "totalTime": 72050,
+  "estimatedCost": 0.13116199951171875,
+  "costPerMinute": 0.006,
+  "language": "english",
+  "timestamp": "2025-10-06T17:14:17.382Z"
+}

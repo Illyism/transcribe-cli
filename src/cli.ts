@@ -13,7 +13,7 @@ import { existsSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { transcribe } from './transcribe'
-import { isYouTubeUrl, downloadYouTubeAudio } from './youtube'
+import { downloadYouTubeAudio, isYouTubeUrl } from './youtube'
 
 function getApiKey(): string {
   // Try environment variable first

@@ -1,0 +1,14 @@
+# Test output files
+output/
+*.srt
+*.mp3
+*.mp4
+*.ogg
+*.opus
+*.wav
+metrics.json
+comparison-report.json
+
+# Keep directory structure
+!output/.gitkeep
+!.gitkeep

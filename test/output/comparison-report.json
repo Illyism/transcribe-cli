@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-10-06T17:16:49.615Z",
+  "inputFile": "/Users/illyism/Movies/Pod/sitespeak.mp4",
+  "results": [
+    {
+      "method": "baseline",
+      "originalSize": 2902041008,
+      "processedSize": 2902041008,
+      "compressionRatio": 1,
+      "originalDuration": 1311.6199951171875,
+      "processedDuration": 1311.6199951171875,
+      "transcriptionTime": 72048,
+      "totalTime": 72050,
+      "estimatedCost": 0.13116199951171875,
+      "costPerMinute": 0.006,
+      "language": "english",
+      "timestamp": "2025-10-06T17:14:17.382Z"
+    },
+    {
+      "method": "speed",
+      "speedFactor": 1.2,
+      "originalSize": 2902041008,
+      "processedSize": 13429580,
+      "compressionRatio": 0.004627632746394327,
+      "originalDuration": 1311.6,
+      "processedDuration": 1093,
+      "transcriptionTime": 52724,
+      "totalTime": 65446,
+      "estimatedCost": 0.13116,
+      "costPerMinute": 0.006,
+      "language": "english",
+      "timestamp": "2025-10-06T17:15:22.831Z"
+    },
+    {
+      "method": "opus",
+      "codec": "libopus",
+      "bitrate": 64,
+      "targetSizeMB": 25,
+      "originalSize": 2902041008,
+      "processedSize": 14964742,
+      "compressionRatio": 0.005156626649570763,
+      "originalDuration": 1311.6199951171875,
+      "processedDuration": 1311.6199951171875,
+      "transcriptionTime": 67786,
+      "totalTime": 86772,
+      "estimatedCost": 0.13116199951171875,
+      "costPerMinute": 0.006,
+      "language": "english",
+      "targetAchieved": true,
+      "timestamp": "2025-10-06T17:16:49.609Z"
+    }
+  ],
+  "comparison": "\n📊 COMPARISON RESULTS\n════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\n| Method | File Size | Size Reduction | Duration | Upload Time* | Processing | Cost | Total Time | Accuracy** |\n|--------|-----------|----------------|----------|--------------|------------|------|------------|------------|\n| Baseline | 2767.60 MB | 0% | 21.9m | ~30s | 72.0s | $0.1312 | 72.0s | 100% |\n| Speed (1.2x) | 12.81 MB | 99.5% | 21.9m | ~15s | 52.7s | $0.1312 | 65.4s | ~98% |\n| Opus (64k) | 14.27 MB | 99.5% | 21.9m | ~15s | 67.8s | $0.1312 | 86.8s | ~99% |\n\n*Upload time estimates based on file size\n**Accuracy estimates based on optimization impact\n",
+  "recommendations": "\n🎯 RECOMMENDATIONS\n══════════════════════════════════════════════════\n\n📦 **Very large file size (>100MB)**\n   → Use **Speed** method for cost optimization\n   → Consider **Opus** method for upload speed\n\n💰 **Cost Analysis:**\n   • Speed method saves $0.0000 (0.0%)\n   • Opus method: same cost as baseline\n\n⚡ **Speed Analysis:**\n   • Fastest method: Speed\n   • Time savings: 6.6s\n\n🎯 **Quality Impact:**\n   • Baseline: 100% accuracy\n   • Speed: ~98% accuracy (minimal impact)\n   • Opus: ~99% accuracy (minimal impact)\n\n"
+}

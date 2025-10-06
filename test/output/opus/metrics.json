@@ -1,0 +1,18 @@
+{
+  "method": "opus",
+  "codec": "libopus",
+  "bitrate": 64,
+  "targetSizeMB": 25,
+  "originalSize": 2902041008,
+  "processedSize": 14964742,
+  "compressionRatio": 0.005156626649570763,
+  "originalDuration": 1311.6199951171875,
+  "processedDuration": 1311.6199951171875,
+  "transcriptionTime": 67786,
+  "totalTime": 86772,
+  "estimatedCost": 0.13116199951171875,
+  "costPerMinute": 0.006,
+  "language": "english",
+  "targetAchieved": true,
+  "timestamp": "2025-10-06T17:16:49.609Z"
+}
