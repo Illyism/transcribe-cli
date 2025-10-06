@@ -4,7 +4,25 @@
 [![npm downloads](https://img.shields.io/npm/dt/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A fast, simple CLI tool to transcribe audio and video files to SRT subtitle format using OpenAI's Whisper API.
+Transcribe audio/video files to SRT subtitles in one command. Optimized for large files (2-4GB videos).
+
+## Quick Start
+
+```bash
+# 1. Try it instantly (no install needed)
+npx @illyism/transcribe video.mp4
+
+# 2. Set your OpenAI API key (one-time setup)
+export OPENAI_API_KEY=sk-...
+
+# 3. Transcribe anything
+npx @illyism/transcribe video.mp4
+npx @illyism/transcribe https://www.youtube.com/watch?v=VIDEO_ID
+```
+
+**That's it!** Get your [free API key here](https://platform.openai.com/api-keys) and start transcribing.
+
+---
 
 ## Why Use This Instead of Whisper CLI?
 
@@ -54,182 +72,117 @@ This tool:
 - 🌍 **Multi-language**: Automatically detects language
 - 🚀 **Lightning Fast**: Optimized for 2-4GB video files
 
-## Installation
+## Installation & Setup
 
-### Try Without Installing (Quick Start)
+### Option 1: Use Instantly (No Install)
 
 ```bash
-# Using npx (npm)
 npx @illyism/transcribe video.mp4
-
-# Using bunx (Bun)
-bunx @illyism/transcribe video.mp4
 ```
 
-### Global Installation (Recommended)
+### Option 2: Install Globally
 
 ```bash
 npm install -g @illyism/transcribe
+# or: bun install -g @illyism/transcribe
 ```
 
-or with Bun:
+### Prerequisites
+
+<details>
+<summary><b>📦 Install FFmpeg</b> (required)</summary>
 
 ```bash
-bun install -g @illyism/transcribe
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# Windows
+choco install ffmpeg
+```
+</details>
+
+<details>
+<summary><b>🎥 Install yt-dlp</b> (optional, for YouTube)</summary>
+
+```bash
+# macOS
+brew install yt-dlp
+
+# Ubuntu/Debian
+sudo apt install yt-dlp
+
+# Windows
+winget install yt-dlp
+
+# Or with pip
+pip install yt-dlp
+```
+</details>
+
+<details>
+<summary><b>🔑 Get OpenAI API Key</b> (required)</summary>
+
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Create a new API key
+3. Copy it and set it up below ⬇️
+</details>
+
+## API Key Setup (30 seconds)
+
+**One-time setup** - Choose your preferred method:
+
+### Method 1: Config File (Recommended)
+
+```bash
+mkdir -p ~/.transcribe && echo '{"apiKey": "sk-YOUR_KEY"}' > ~/.transcribe/config.json
 ```
 
-### Local Installation
+### Method 2: Environment Variable  
 
 ```bash
-npm install @illyism/transcribe
+export OPENAI_API_KEY=sk-YOUR_KEY
 ```
 
-## Prerequisites
+**Don't have a key?** [Get one free here](https://platform.openai.com/api-keys) (takes 1 minute)
 
-1. **FFmpeg**: Required for video processing
-   ```bash
-   # macOS
-   brew install ffmpeg
-   
-   # Ubuntu/Debian
-   sudo apt-get install ffmpeg
-   
-   # Windows
-   choco install ffmpeg
-   ```
-
-2. **yt-dlp** (Optional, for YouTube support): Required only if transcribing YouTube videos
-   ```bash
-   # macOS
-   brew install yt-dlp
-   
-   # Ubuntu/Debian
-   sudo apt install yt-dlp
-   
-   # Windows
-   winget install yt-dlp
-   
-   # Or with pip
-   pip install yt-dlp
-   ```
-
-3. **OpenAI API Key**: Get one at [platform.openai.com](https://platform.openai.com/api-keys)
-
-## Configuration
-
-You need an OpenAI API key to use this tool. **Don't have one yet?**
-
-👉 **[Get your API key here](https://platform.openai.com/api-keys)** (it's free to start!)
-
-Once you have your key, choose one of these setup methods:
-
-### Option 1: Config File (Recommended for Regular Use)
-
-This saves your API key permanently so you don't have to set it every time:
+## Usage Examples
 
 ```bash
-# Create the config directory and file
-mkdir -p ~/.transcribe
-echo '{"apiKey": "sk-YOUR_KEY_HERE"}' > ~/.transcribe/config.json
-
-# Replace sk-YOUR_KEY_HERE with your actual key
-```
-
-**Verify it worked:**
-```bash
-cat ~/.transcribe/config.json
-# Should show: {"apiKey": "sk-..."}
-```
-
-### Option 2: Environment Variable (One-time Use)
-
-For temporary use or CI/CD pipelines:
-
-```bash
-export OPENAI_API_KEY='sk-YOUR_KEY_HERE'
-```
-
-**Make it permanent** (add to your shell config):
-
-```bash
-# For zsh (macOS default)
-echo 'export OPENAI_API_KEY="sk-YOUR_KEY_HERE"' >> ~/.zshrc
-source ~/.zshrc
-
-# For bash
-echo 'export OPENAI_API_KEY="sk-YOUR_KEY_HERE"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-## Usage
-
-### CLI Usage
-
-#### Basic Usage
-
-```bash
-transcribe video.mp4
-```
-
-This will create `video.srt` in the same directory.
-
-#### Try Without Installing
-
-```bash
-# Using npx (no installation needed)
-npx @illyism/transcribe video.mp4
-
-# Using bunx (with Bun)
-bunx @illyism/transcribe podcast.mp3
-```
-
-#### Examples
-
-```bash
-# Transcribe a video
-transcribe /path/to/podcast.mp4
-
-# Transcribe an audio file
-transcribe interview.mp3
-
-# Transcribe with full path
-transcribe ~/Documents/meeting.wav
-
-# Transcribe a YouTube video
-transcribe https://www.youtube.com/watch?v=bAYZjVAodoo
-
-# YouTube Shorts also work
-transcribe https://www.youtube.com/shorts/VIDEO_ID
-
-# Short YouTube URLs
-transcribe https://youtu.be/bAYZjVAodoo
-
-# Disable optimization for original audio
-transcribe large-video.mp4 --raw
-```
-
-### Automatic Optimization
-
-**All files are automatically optimized by default:**
-- ⚡ Speeds up audio by 1.2x for faster processing
-- 📉 Reduces file size by 99.5% (2.7GB → 12.8MB)
-- ⏱️  Adjusts SRT timestamps back to original speed
-- 🎯 Maintains ~98% accuracy
-- 💰 Same cost, better speed
-
-Use `--raw` flag to disable optimization and use original audio.
-
-```bash
-# With optimization (default)
+# Local video file
 transcribe video.mp4
 
-# Without optimization
+# YouTube video
+transcribe https://www.youtube.com/watch?v=VIDEO_ID
+
+# Audio file
+transcribe podcast.mp3
+
+# Disable optimization (use original audio)
 transcribe video.mp4 --raw
 ```
 
-### Programmatic Usage
+**Outputs:** Creates `video.srt` in the same directory.
 
-You can also use this as a library in your Node.js/Bun projects:
+### What Happens Automatically
+
+By default, the tool optimizes large files:
+
+```
+2.7GB video → Extract audio → Speed up 1.2x → Compress if needed → Upload 12MB → Transcribe → Adjust timestamps
+```
+
+**Result:** 
+- ⚡ 99.5% smaller uploads (2.7GB → 12.8MB)
+- 🚀 10-100x faster than uploading full video  
+- 🎯 ~98% accuracy maintained
+- 💰 Same cost ($0.006/min)
+
+**Want original audio?** Add `--raw` flag.
+
+### Use as a Library
 
 ```bash
 npm install @illyism/transcribe
@@ -239,50 +192,73 @@ npm install @illyism/transcribe
 import { transcribe } from '@illyism/transcribe'
 
 const result = await transcribe({
-  inputPath: '/path/to/video.mp4',
+  inputPath: 'video.mp4',
   apiKey: process.env.OPENAI_API_KEY,
-  outputPath: '/custom/path/output.srt', // optional
-  optimize: true // default: true, set to false to disable optimization
+  optimize: true // default, set false to disable
 })
 
-console.log('SRT file:', result.srtPath)
-console.log('Language:', result.language)
-console.log('Duration:', result.duration)
-console.log('Full text:', result.text)
+console.log(result.srtPath)  // Path to generated SRT file
+console.log(result.text)     // Full transcription text
 ```
 
-#### TypeScript Support
-
-Full TypeScript types are included:
+<details>
+<summary>Full API reference</summary>
 
 ```typescript
-import type { TranscribeOptions, TranscribeResult } from '@illyism/transcribe'
-
-const options: TranscribeOptions = {
-  inputPath: './video.mp4',
-  apiKey: 'sk-...'
+interface TranscribeOptions {
+  inputPath: string        // Path to video/audio file
+  apiKey?: string         // OpenAI API key (or use env var)
+  outputPath?: string     // Custom output path (optional)
+  optimize?: boolean      // Enable optimization (default: true)
 }
 
-const result: TranscribeResult = await transcribe(options)
+interface TranscribeResult {
+  srtPath: string         // Path to generated SRT file
+  text: string           // Full transcription text
+  language: string       // Detected language
+  duration: number       // Duration in seconds
+}
 ```
+</details>
 
-### Help
+---
 
-```bash
-transcribe --help
-```
+## Details
 
-### Version
+<details>
+<summary><b>📋 Supported Formats</b></summary>
 
-```bash
-transcribe --version
-```
+- **Video**: MP4, WebM, MOV, AVI, MKV
+- **Audio**: MP3, WAV, M4A, OGG, Opus
+- **YouTube**: All videos, Shorts, youtu.be links
+</details>
 
-## Output
+<details>
+<summary><b>💰 Cost</b></summary>
 
-The tool generates an SRT (SubRip Subtitle) file with the same name as your input file:
+OpenAI Whisper API: **$0.006 per minute**
 
-```
+Examples:
+- 5 min: $0.03
+- 30 min: $0.18
+- 2 hours: $0.72
+</details>
+
+<details>
+<summary><b>⚙️ How It Works</b></summary>
+
+1. Extract audio from video (if needed)
+2. Optimize: 1.2x speed + compression if >24MB
+3. Upload to Whisper API
+4. Generate SRT with timestamps
+5. Adjust timestamps to match original
+6. Clean up temp files
+</details>
+
+<details>
+<summary><b>📄 SRT Output Example</b></summary>
+
+```srt
 1
 00:00:00,000 --> 00:00:03,420
 Hey and thank you for getting the SEO roast.
@@ -291,78 +267,67 @@ Hey and thank you for getting the SEO roast.
 00:00:03,420 --> 00:00:06,840
 I'll take a look at your website and see what things we can improve.
 ```
-
-## Supported Formats
-
-- **Video**: MP4, WebM, MOV, AVI, MKV
-- **Audio**: MP3, WAV, M4A, OGG
-- **YouTube**: All YouTube videos, Shorts, and youtu.be links
-
-## Cost
-
-The OpenAI Whisper API costs **$0.006 per minute** of audio.
-
-Examples:
-- 5 minute video: ~$0.03
-- 30 minute podcast: ~$0.18
-- 2 hour interview: ~$0.72
-
-## How It Works
-
-1. **Audio Extraction**: If you provide a video file, FFmpeg extracts the audio
-2. **Transcription**: The audio is sent to OpenAI's Whisper API
-3. **SRT Generation**: The transcription with timestamps is converted to SRT format
-4. **Cleanup**: Temporary files are automatically removed
+</details>
 
 ## Troubleshooting
 
-### "OPENAI_API_KEY not found"
+<details>
+<summary><b>"OPENAI_API_KEY not found"</b></summary>
 
-Make sure you've set up your API key using one of the configuration methods above.
+Set up your API key using one of the methods in [API Key Setup](#api-key-setup-30-seconds).
+</details>
 
-### "FFmpeg not found"
+<details>
+<summary><b>"FFmpeg not found"</b></summary>
 
-Install FFmpeg using the instructions in the Prerequisites section.
-
-### "File not found"
-
-Make sure the path to your file is correct. Use absolute paths if needed:
-
+Install FFmpeg:
 ```bash
-transcribe /Users/username/Videos/video.mp4
+brew install ffmpeg  # macOS
+sudo apt install ffmpeg  # Ubuntu
+choco install ffmpeg  # Windows
 ```
+</details>
 
-### API Errors
+<details>
+<summary><b>"yt-dlp not found" (YouTube only)</b></summary>
 
-If you get a 502 or other API error, wait a moment and try again. OpenAI's API may be experiencing temporary issues.
-
-## Development
-
-### Build
-
+Install yt-dlp:
 ```bash
-bun install
-bun run build
+brew install yt-dlp  # macOS
+sudo apt install yt-dlp  # Ubuntu
+pip install yt-dlp  # Any platform
 ```
+</details>
 
-### Test Locally
+<details>
+<summary><b>File not found error</b></summary>
 
+Use absolute paths:
 ```bash
-bun run dev /path/to/test-file.mp4
+transcribe /full/path/to/video.mp4
 ```
+</details>
 
-## License
+<details>
+<summary><b>API errors (502, timeout, etc.)</b></summary>
 
-MIT
+OpenAI API may be temporarily down. Wait 30 seconds and try again.
+</details>
 
-## Author
+---
 
-Ilias Ismanalijev
+## Links
+
+- 📦 [NPM Package](https://www.npmjs.com/package/@illyism/transcribe)
+- 🐙 [GitHub Repo](https://github.com/Illyism/transcribe-cli)
+- 📚 [Full Changelog](https://github.com/Illyism/transcribe-cli/blob/main/CHANGELOG.md)
+- 🧪 [A/B Test Results](https://github.com/Illyism/transcribe-cli/tree/main/test)
+- 🐛 [Report Issues](https://github.com/Illyism/transcribe-cli/issues)
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+Pull requests welcome! See [GitHub repo](https://github.com/Illyism/transcribe-cli).
 
-## Support
+## License
 
-For issues and questions, please open an issue on [GitHub](https://github.com/magicspace/transcribe/issues).
+MIT © [Ilias Ismanalijev](https://github.com/Illyism)
