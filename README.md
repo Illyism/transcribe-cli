@@ -30,6 +30,17 @@ While OpenAI's Whisper has multiple ways to use it, this tool provides a **simpl
 
 **Perfect for**: Content creators, podcasters, and developers who need quick, accurate transcriptions with minimal setup.
 
+### Real-World Use Case
+
+Got a 30-60 minute video that's 2-4GB? Other tools like Descript upload the **entire video** file, which takes forever and costs more.
+
+This tool:
+1. 🎬 Extracts only the audio locally (takes seconds with FFmpeg)
+2. ☁️ Uploads only ~20-40MB of audio to Whisper
+3. 📝 Generates SRT subtitles
+
+**Result**: 10-100x faster than uploading multi-GB video files. Same quality, fraction of the time and bandwidth.
+
 ## Features
 
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
