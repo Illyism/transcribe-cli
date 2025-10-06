@@ -28,6 +28,8 @@ function convertToSRT(response: WhisperResponse): string {
 
 async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    let errorOutput = ''
+    
     const ffmpeg = spawn('ffmpeg', [
       '-i', inputPath,
       '-vn',
@@ -37,16 +39,38 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
       outputPath
     ])
     
+    // Capture stderr for error messages
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString()
+    })
+    
     ffmpeg.on('close', (code) => {
       if (code === 0) {
         resolve()
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}`))
+        // Provide more helpful error messages
+        let errorMsg = `FFmpeg exited with code ${code}`
+        
+        if (errorOutput.includes('Permission denied')) {
+          errorMsg += '\nPermission denied. Check file/folder permissions.'
+        } else if (errorOutput.includes('No such file or directory')) {
+          errorMsg += '\nInput file not found or output directory does not exist.'
+        } else if (errorOutput.includes('Invalid data found')) {
+          errorMsg += '\nInvalid or corrupted video file.'
+        } else if (code === 234) {
+          errorMsg += '\nFFmpeg conversion failed. Make sure FFmpeg is installed and the video file is valid.'
+        }
+        
+        reject(new Error(errorMsg))
       }
     })
     
     ffmpeg.on('error', (err) => {
-      reject(err)
+      if (err.message.includes('ENOENT')) {
+        reject(new Error('FFmpeg is not installed. Please install FFmpeg:\n  macOS: brew install ffmpeg\n  Ubuntu: sudo apt-get install ffmpeg\n  Windows: choco install ffmpeg'))
+      } else {
+        reject(err)
+      }
     })
   })
 }
@@ -111,17 +135,21 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   
   // Extract audio if it's a video file
   if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
+    console.log('🎬 Extracting audio from video...')
     const dir = inputPath.substring(0, inputPath.lastIndexOf('/'))
     const baseName = inputPath.substring(inputPath.lastIndexOf('/') + 1, inputPath.lastIndexOf('.'))
     tempAudioPath = join(dir, `${baseName}_temp.mp3`)
     
     await extractAudio(inputPath, tempAudioPath)
+    console.log('✅ Audio extraction complete!')
     audioPath = tempAudioPath
   }
   
   try {
     // Transcribe with Whisper
+    console.log('🎙️  Transcribing with OpenAI Whisper API...')
     const transcription = await transcribeWithWhisper(audioPath, apiKey)
+    console.log(`✅ Transcription complete! Language: ${transcription.language}, Duration: ${transcription.duration.toFixed(2)}s`)
     
     // Convert to SRT format
     const srt = convertToSRT(transcription)
@@ -140,6 +168,7 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     // Clean up temporary audio file if created
     if (tempAudioPath && existsSync(tempAudioPath)) {
       unlinkSync(tempAudioPath)
+      console.log('🧹 Cleaned up temporary files')
     }
   }
 }
