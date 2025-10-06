@@ -17,6 +17,16 @@ A fast, simple CLI tool to transcribe audio and video files to SRT subtitle form
 
 ## Installation
 
+### Try Without Installing (Quick Start)
+
+```bash
+# Using npx (npm)
+npx @illyism/transcribe video.mp4
+
+# Using bunx (Bun)
+bunx @illyism/transcribe video.mp4
+```
+
 ### Global Installation (Recommended)
 
 ```bash
@@ -90,6 +100,16 @@ transcribe video.mp4
 ```
 
 This will create `video.srt` in the same directory.
+
+#### Try Without Installing
+
+```bash
+# Using npx (no installation needed)
+npx @illyism/transcribe video.mp4
+
+# Using bunx (with Bun)
+bunx @illyism/transcribe podcast.mp3
+```
 
 #### Examples
 
