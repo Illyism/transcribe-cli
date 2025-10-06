@@ -6,6 +6,30 @@
 
 A fast, simple CLI tool to transcribe audio and video files to SRT subtitle format using OpenAI's Whisper API.
 
+## Why Use This Instead of Whisper CLI?
+
+While OpenAI's Whisper has multiple ways to use it, this tool provides a **simpler, more convenient** experience:
+
+| Feature | @illyism/transcribe | Official Whisper CLI | Local Whisper (whisper.cpp) |
+|---------|---------------------|---------------------|----------------------------|
+| **Setup** | Zero setup with `npx`/`bunx` | Install Python package | Download models (~1-5GB) |
+| **Video Support** | ✅ Automatic with FFmpeg | ❌ Audio only | ❌ Audio only |
+| **SRT Output** | ✅ Built-in | ❌ Manual formatting | ✅ Available |
+| **Processing** | ☁️ Cloud (fast) | ☁️ Cloud (fast) | 💻 Local (slower) |
+| **Cost** | $0.006/min | $0.006/min | Free (after setup) |
+| **Internet Required** | ✅ Yes | ✅ Yes | ❌ No |
+| **Best For** | Quick tasks, videos | API integration | Privacy, offline use |
+
+### Key Advantages
+
+- 🎬 **Handles videos directly** - No need to manually extract audio
+- 📝 **SRT format ready** - Generates subtitles automatically
+- 🚀 **Zero installation** - Just run `npx @illyism/transcribe video.mp4`
+- 🔧 **Simple config** - One-time API key setup
+- 🌐 **Cross-platform** - Works on macOS, Linux, Windows
+
+**Perfect for**: Content creators, podcasters, and developers who need quick, accurate transcriptions with minimal setup.
+
 ## Features
 
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
