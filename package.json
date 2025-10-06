@@ -27,12 +27,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/magicspace/transcribe.git"
+    "url": "https://github.com/Illyism/transcribe-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/magicspace/transcribe/issues"
+    "url": "https://github.com/Illyism/transcribe-cli/issues"
   },
-  "homepage": "https://github.com/magicspace/transcribe#readme",
+  "homepage": "https://github.com/Illyism/transcribe-cli#readme",
   "engines": {
     "node": ">=18.0.0"
   },
