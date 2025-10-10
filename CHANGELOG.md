@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.3] - 2025-10-10
+
+### Fixed
+- **Critical**: Fixed timestamp adjustment direction when using speed optimization
+  - Timestamps were being divided by speed factor instead of multiplied
+  - This caused SRT files to be 17% shorter than original audio (e.g., 40min audio had timestamps ending at 28min)
+  - Now correctly multiplies timestamps by speed factor to match original audio duration
+  - Example: 40:17 audio → sped up to 33:34 → Whisper timestamps correctly adjusted back to 40:17
+
 ## [3.0.1] - 2025-10-06
 
 ### Fixed
