@@ -103,7 +103,7 @@ export function adjustSRTTimestamps(srtContent: string, speedFactor: number): st
       const [hours, minutes, seconds] = time.split(':').map(Number)
       
       const totalMs = (hours * 3600 + minutes * 60 + seconds) * 1000 + parseInt(ms)
-      const adjustedMs = Math.round(totalMs / speedFactor)
+      const adjustedMs = Math.round(totalMs * speedFactor)
       
       const adjHours = Math.floor(adjustedMs / 3600000)
       const adjMinutes = Math.floor((adjustedMs % 3600000) / 60000)
