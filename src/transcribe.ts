@@ -86,11 +86,17 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
 }
 
 async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise<WhisperResponse> {
-  const { default: OpenAI } = await import('openai')
+  const { default: OpenAI, toFile } = await import('openai')
   const openai = new OpenAI({ apiKey })
   
-  const fs = await import('fs')
-  const audioFile = fs.createReadStream(audioPath)
+  // Read file as buffer and use SDK's toFile helper to create proper File object
+  const fs = await import('fs/promises')
+  const { basename } = await import('path')
+  const fileBuffer = await fs.readFile(audioPath)
+  const fileName = basename(audioPath)
+  
+  // Use SDK's toFile helper to create a proper File object
+  const audioFile = await toFile(fileBuffer, fileName, { type: 'audio/mpeg' })
   
   const transcription = await openai.audio.transcriptions.create({
     file: audioFile,
