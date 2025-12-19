@@ -21,7 +21,9 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
   await new Promise<void>((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
       '-i', inputPath,
-      '-filter:a', `atempo=${SPEED_FACTOR}`,
+      '-filter:a', `atempo=${SPEED_FACTOR}`,  // Speed up audio
+      '-ac', '1',                              // Ensure mono (if not already)
+      '-ar', '16000',                          // Maintain 16kHz (optimal for speech)
       '-acodec', 'libmp3lame',
       '-q:a', '2',
       '-y',

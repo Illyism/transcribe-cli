@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dt/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Transcribe audio/video files to SRT subtitles in one command. Optimized for large files (2-4GB videos).
+Transcribe audio/video files to SRT subtitles in one command. Optimized for large files, long movies, and video editing workflows.
 
 ## Quick Start
 
@@ -66,11 +66,13 @@ This tool:
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
 - 🎥 **YouTube Support**: Download and transcribe YouTube videos directly
 - 🎯 **High Accuracy**: Powered by OpenAI's Whisper API
-- ⚡ **Smart Optimization**: Automatic 1.2x speed processing for large files (99.5% size reduction)
+- ⚡ **Smart Optimization**: Automatic 1.2x speed processing + mono/16kHz extraction (optimized for dialogue)
 - 📝 **SRT Format**: Generates standard SRT subtitle files with precise timestamps
+- 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes)
+- 🎬 **Editor-Friendly**: Timecode offset, custom output paths, chunk size control
 - 🔧 **Simple Setup**: Easy configuration via environment variable or config file
 - 🌍 **Multi-language**: Automatically detects language
-- 🚀 **Lightning Fast**: Optimized for 2-4GB video files
+- 🚀 **Lightning Fast**: Optimized for 2-4GB+ video files
 
 ## Installation & Setup
 
@@ -166,13 +168,38 @@ transcribe video.mp4 --raw
 
 **Outputs:** Creates `video.srt` in the same directory.
 
+### Editor-Friendly Features
+
+Perfect for video editing workflows:
+
+```bash
+# Custom output path (file or directory)
+transcribe movie.mkv --output ./subtitles
+transcribe movie.mkv --output ./subtitles/movie.srt
+
+# Timecode offset (for editorial timelines)
+transcribe movie.mkv --offset 01:00:00.000  # Start at 1 hour
+transcribe movie.mkv --offset 3600         # Same, in seconds
+
+# Force chunking for very long movies
+transcribe long_movie.mkv --chunk-minutes 15
+```
+
+**Why chunking?** Movies 45+ minutes are automatically split into ~20-minute chunks for reliability. Each chunk is transcribed separately, then merged seamlessly with correct timestamps.
+
 ### What Happens Automatically
 
 By default, the tool optimizes large files:
 
 ```
-2.7GB video → Extract audio → Speed up 1.2x → Compress if needed → Upload 12MB → Transcribe → Adjust timestamps
+2.7GB video → Extract audio (mono, 16kHz) → Speed up 1.2x → Chunk if >45min → Upload chunks → Transcribe → Merge & adjust timestamps
 ```
+
+**For long movies (45+ minutes):**
+- Automatically splits into ~20-minute chunks
+- Transcribes each chunk separately
+- Merges results with correct timestamps
+- Handles 2+ hour movies reliably
 
 **Result:** 
 - ⚡ 99.5% smaller uploads (2.7GB → 12.8MB)
@@ -247,12 +274,14 @@ Examples:
 <details>
 <summary><b>⚙️ How It Works</b></summary>
 
-1. Extract audio from video (if needed)
+1. Extract audio from video (mono, 16kHz - optimized for speech)
 2. Optimize: 1.2x speed + compression if >24MB
-3. Upload to Whisper API
-4. Generate SRT with timestamps
-5. Adjust timestamps to match original
-6. Clean up temp files
+3. Auto-chunk if >45 minutes (for reliability)
+4. Upload chunks to Whisper API (or single file)
+5. Generate SRT with timestamps
+6. Merge chunks (if needed) and adjust timestamps to match original
+7. Apply timecode offset (if specified)
+8. Clean up temp files
 </details>
 
 <details>
@@ -312,6 +341,23 @@ transcribe /full/path/to/video.mp4
 <summary><b>API errors (502, timeout, etc.)</b></summary>
 
 OpenAI API may be temporarily down. Wait 30 seconds and try again.
+</details>
+
+<details>
+<summary><b>"Could not parse multipart form" error</b></summary>
+
+If you're using Bun runtime, switch to Node.js:
+
+```bash
+# Use Node.js instead of Bun
+node dist/cli.js video.mp4
+
+# Or install globally and use the transcribe command
+npm install -g @illyism/transcribe
+transcribe video.mp4
+```
+
+The CLI works best with Node.js 18+ due to OpenAI SDK compatibility.
 </details>
 
 ---

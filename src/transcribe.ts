@@ -1,10 +1,15 @@
 import { spawn } from 'child_process'
-import { existsSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs'
 import { writeFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import type { TranscribeOptions, TranscribeResult } from './index'
-import { adjustSRTTimestamps, optimizeAudio } from './optimize'
-import type { WhisperResponse } from './types'
+import { optimizeAudio } from './optimize'
+import type { WhisperResponse, WhisperSegment, WhisperWord } from './types'
+
+const MAX_UPLOAD_MB = 24 // Keep under ~25MB Whisper API limit (with headroom)
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+const AUTO_CHUNK_MINUTES = 20
+const AUTO_CHUNK_THRESHOLD_MINUTES = 45
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
@@ -15,10 +20,10 @@ function formatTime(seconds: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`
 }
 
-function convertToSRT(response: WhisperResponse): string {
+function convertSegmentsToSRT(segments: Array<Pick<WhisperSegment, 'start' | 'end' | 'text'>>): string {
   let srt = ''
   
-  response.segments.forEach((segment, index) => {
+  segments.forEach((segment, index) => {
     srt += `${index + 1}\n`
     srt += `${formatTime(segment.start)} --> ${formatTime(segment.end)}\n`
     srt += `${segment.text.trim()}\n\n`
@@ -27,15 +32,35 @@ function convertToSRT(response: WhisperResponse): string {
   return srt
 }
 
+function transformSegments(
+  segments: WhisperSegment[],
+  transform: (seconds: number) => number
+): WhisperSegment[] {
+  return segments.map((segment) => ({
+    ...segment,
+    start: transform(segment.start),
+    end: transform(segment.end),
+    words: segment.words?.map((word: WhisperWord) => ({
+      ...word,
+      start: transform(word.start),
+      end: transform(word.end),
+    })),
+  }))
+}
+
 async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     let errorOutput = ''
     
+    // Optimize for speech transcription: mono, 16kHz sample rate (Whisper's native)
+    // This reduces file size significantly for movies while maintaining dialogue clarity
     const ffmpeg = spawn('ffmpeg', [
       '-i', inputPath,
-      '-vn',
+      '-vn',                    // No video
+      '-ac', '1',               // Mono (dialogue-focused)
+      '-ar', '16000',           // 16kHz sample rate (optimal for speech, reduces size)
       '-acodec', 'libmp3lame',
-      '-q:a', '2',
+      '-q:a', '2',              // High quality MP3
       '-y',
       outputPath
     ])
@@ -85,6 +110,117 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
   })
 }
 
+async function getMediaDurationSeconds(inputPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let stdout = ''
+    let stderr = ''
+
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      inputPath,
+    ])
+
+    ffprobe.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    ffprobe.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const duration = parseFloat(stdout.trim())
+        if (!Number.isFinite(duration)) {
+          reject(new Error(`FFprobe returned invalid duration for: ${inputPath}`))
+          return
+        }
+        resolve(duration)
+      } else {
+        reject(new Error(`FFprobe failed with code ${code}${stderr ? `\n\nFFprobe output:\n${stderr.trim()}` : ''}`))
+      }
+    })
+
+    ffprobe.on('error', (err) => {
+      if (err.message.includes('ENOENT')) {
+        reject(new Error('FFprobe is not installed. Please install FFmpeg (includes ffprobe):\n  macOS: brew install ffmpeg\n  Ubuntu: sudo apt-get install ffmpeg\n  Windows: choco install ffmpeg'))
+      } else {
+        reject(err)
+      }
+    })
+  })
+}
+
+async function splitAudioIntoChunks(inputPath: string, chunkSeconds: number): Promise<string[]> {
+  if (!Number.isFinite(chunkSeconds) || chunkSeconds <= 0) {
+    throw new Error(`Invalid chunkSeconds: ${chunkSeconds}`)
+  }
+
+  const ext = inputPath.toLowerCase().split('.').pop() || 'mp3'
+  const dir = dirname(inputPath)
+  const prefix = `chunks_${Date.now()}`
+  const outputPattern = join(dir, `${prefix}_%03d.${ext}`)
+
+  await new Promise<void>((resolve, reject) => {
+    let stderr = ''
+
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', inputPath,
+      '-f', 'segment',
+      '-segment_time', String(chunkSeconds),
+      '-reset_timestamps', '1',
+      '-c', 'copy',
+      '-y',
+      outputPattern,
+    ])
+
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`FFmpeg chunking failed with code ${code}${stderr ? `\n\nFFmpeg output:\n${stderr.trim().split('\n').slice(-8).join('\n')}` : ''}`))
+      }
+    })
+
+    ffmpeg.on('error', (err) => {
+      if (err.message.includes('ENOENT')) {
+        reject(new Error('FFmpeg is not installed. Please install FFmpeg:\n  macOS: brew install ffmpeg\n  Ubuntu: sudo apt-get install ffmpeg\n  Windows: choco install ffmpeg'))
+      } else {
+        reject(err)
+      }
+    })
+  })
+
+  const created = readdirSync(dir)
+    .filter((name) => name.startsWith(`${prefix}_`) && name.toLowerCase().endsWith(`.${ext}`))
+    .sort()
+    .map((name) => join(dir, name))
+
+  if (created.length === 0) {
+    throw new Error('Chunking produced no output files. Please try again.')
+  }
+
+  // Sanity check: if any chunk is still too large, give actionable guidance
+  const tooLarge = created.find((p) => statSync(p).size > MAX_UPLOAD_BYTES)
+  if (tooLarge) {
+    throw new Error(
+      `Audio chunk is still too large for Whisper API (~${MAX_UPLOAD_MB}MB).\n\n` +
+      `Chunk: ${tooLarge}\n\n` +
+      `Try:\n` +
+      `- removing --raw (use default optimization)\n` +
+      `- or using a smaller chunk size (e.g. --chunk-minutes 10)\n`
+    )
+  }
+
+  return created
+}
+
 async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise<WhisperResponse> {
   const { default: OpenAI, toFile } = await import('openai')
   const openai = new OpenAI({ apiKey })
@@ -95,8 +231,20 @@ async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise
   const fileBuffer = await fs.readFile(audioPath)
   const fileName = basename(audioPath)
   
+  const ext = fileName.toLowerCase().split('.').pop()
+  const mimeTypes: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    mp4: 'audio/mp4',
+    m4a: 'audio/mp4',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    webm: 'audio/webm',
+    flac: 'audio/flac',
+  }
+  const mimeType = (ext && mimeTypes[ext]) || 'application/octet-stream'
+
   // Use SDK's toFile helper to create a proper File object
-  const audioFile = await toFile(fileBuffer, fileName, { type: 'audio/mpeg' })
+  const audioFile = await toFile(fileBuffer, fileName, { type: mimeType })
   
   const transcription = await openai.audio.transcriptions.create({
     file: audioFile,
@@ -129,7 +277,7 @@ async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise
  * ```
  */
 export async function transcribe(options: TranscribeOptions): Promise<TranscribeResult> {
-  const { inputPath, apiKey, outputPath, optimize = true } = options
+  const { inputPath, apiKey, outputPath, optimize = true, offsetSeconds = 0, chunkMinutes } = options
   
   if (!existsSync(inputPath)) {
     throw new Error(`File not found: ${inputPath}`)
@@ -149,13 +297,14 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   let audioPath = inputPath
   let tempAudioPath: string | null = null
   let optimizedPath: string | null = null
+  let chunkPaths: string[] = []
   let speedFactor = 1.0
   
   // Extract audio if it's a video file
   if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
     console.log('🎬 Extracting audio from video...')
-    const dir = inputPath.substring(0, inputPath.lastIndexOf('/'))
-    const baseName = inputPath.substring(inputPath.lastIndexOf('/') + 1, inputPath.lastIndexOf('.'))
+    const dir = dirname(inputPath)
+    const baseName = basename(inputPath, extname(inputPath))
     tempAudioPath = join(dir, `${baseName}_temp.mp3`)
     
     await extractAudio(inputPath, tempAudioPath)
@@ -173,43 +322,109 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       }
       speedFactor = optimized.speedFactor
     }
-    
-    // Transcribe with Whisper
-    console.log('🎙️  Transcribing with OpenAI Whisper API...')
-    const transcription = await transcribeWithWhisper(audioPath, apiKey)
-    console.log(`✅ Transcription complete! Language: ${transcription.language}, Duration: ${transcription.duration.toFixed(2)}s`)
-    
-    // Convert to SRT format
-    let srt = convertToSRT(transcription)
-    
-    // Adjust timestamps if audio was sped up
-    if (speedFactor !== 1.0) {
-      console.log(`⏱️  Adjusting timestamps back to original speed...`)
-      srt = adjustSRTTimestamps(srt, speedFactor)
+
+    const fileSizeBytes = statSync(audioPath).size
+    const durationOptimized = await getMediaDurationSeconds(audioPath)
+    const durationOriginal = durationOptimized * speedFactor
+
+    const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
+    const shouldChunk =
+      chunkMinutes !== undefined ||
+      fileSizeBytes > MAX_UPLOAD_BYTES ||
+      durationOriginal > AUTO_CHUNK_THRESHOLD_MINUTES * 60
+
+    if (offsetSeconds !== 0) {
+      console.log(`🕒 Applying timestamp offset: ${offsetSeconds}s`)
     }
-    
-    // Save SRT file
-    const srtPath = outputPath || inputPath.substring(0, inputPath.lastIndexOf('.')) + '.srt'
+
+    let mergedSegments: WhisperSegment[] = []
+    let mergedText = ''
+    let language = 'unknown'
+    let originalDurationSeconds = durationOriginal
+
+    if (shouldChunk) {
+      const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
+      const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
+
+      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
+      chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
+      console.log(`✅ Created ${chunkPaths.length} chunks`)
+
+      let offsetOptimizedSeconds = 0
+      let totalOptimizedSeconds = 0
+
+      for (let i = 0; i < chunkPaths.length; i++) {
+        const chunkPath = chunkPaths[i]
+        console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+
+        const chunkDuration = await getMediaDurationSeconds(chunkPath)
+        const chunkTranscription = await transcribeWithWhisper(chunkPath, apiKey)
+
+        if (i === 0) {
+          language = chunkTranscription.language
+        }
+
+        mergedText += chunkTranscription.text + '\n'
+
+        const transformed = transformSegments(chunkTranscription.segments, (t) => {
+          // chunk audio timestamps are in optimized time; map to global original timeline:
+          // (localChunkTime + chunkOffsetOptimized) * speedFactor + userOffsetSeconds
+          return (t + offsetOptimizedSeconds) * speedFactor + offsetSeconds
+        })
+
+        mergedSegments.push(...transformed)
+
+        offsetOptimizedSeconds += chunkDuration
+        totalOptimizedSeconds += chunkDuration
+      }
+
+      originalDurationSeconds = totalOptimizedSeconds * speedFactor
+      console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
+    } else {
+      // Transcribe with Whisper
+      console.log('🎙️  Transcribing with OpenAI Whisper API...')
+      const transcription = await transcribeWithWhisper(audioPath, apiKey)
+      language = transcription.language
+      mergedText = transcription.text
+
+      mergedSegments = transformSegments(transcription.segments, (t) => t * speedFactor + offsetSeconds)
+      originalDurationSeconds = transcription.duration * speedFactor
+
+      console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
+    }
+
+    // Sort segments by start time (important for chunked transcriptions)
+    mergedSegments.sort((a, b) => a.start - b.start)
+
+    // Convert to SRT format
+    const srt = convertSegmentsToSRT(mergedSegments)
+
+    // Save SRT file (ensure directory exists)
+    const defaultSrtPath = join(dirname(inputPath), `${basename(inputPath, extname(inputPath))}.srt`)
+    const srtPath = outputPath || defaultSrtPath
+    mkdirSync(dirname(srtPath), { recursive: true })
     await writeFile(srtPath, srt, 'utf-8')
-    
-    // Calculate original duration if sped up
-    const originalDuration = transcription.duration * speedFactor
-    
+
     return {
       srtPath,
-      text: transcription.text,
-      language: transcription.language,
-      duration: originalDuration
+      text: mergedText.trim(),
+      language,
+      duration: originalDurationSeconds
     }
   } finally {
     // Clean up temporary files
+    for (const chunkPath of chunkPaths) {
+      if (chunkPath && existsSync(chunkPath)) {
+        unlinkSync(chunkPath)
+      }
+    }
     if (tempAudioPath && existsSync(tempAudioPath)) {
       unlinkSync(tempAudioPath)
     }
     if (optimizedPath && existsSync(optimizedPath)) {
       unlinkSync(optimizedPath)
     }
-    if (tempAudioPath || optimizedPath) {
+    if (chunkPaths.length || tempAudioPath || optimizedPath) {
       console.log('🧹 Cleaned up temporary files')
     }
   }
