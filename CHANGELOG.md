@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-12-19
+
+### Added
+- **Automatic Chunking**: Long media files (45+ minutes) are now automatically split into 20-minute chunks for improved reliability and faster processing.
+- **New CLI Options**:
+  - `--output` (-o): Specify custom SRT output path or directory.
+  - `--offset`: Shift subtitle timestamps (supports seconds or HH:MM:SS.mmm format).
+  - `--chunk-minutes`: Force custom chunk duration for long inputs.
+- **Editor-Friendly Features**: Improved support for video editing workflows with timecode offsets and custom output paths.
+
+### Improved
+- **Audio Extraction**: Optimized audio processing for speech transcription (mono, 16kHz) to reduce file size significantly while maintaining dialogue clarity.
+- **Error Handling**: Enhanced guidance for FFmpeg failures and automatic chunking errors.
+- **Documentation**: Updated README with detailed usage for long movies and editor workflows.
+
 ## [3.0.4] - 2025-12-19
 
 ### Changed
