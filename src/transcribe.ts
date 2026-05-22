@@ -10,6 +10,7 @@ const MAX_UPLOAD_MB = 24 // Keep under ~25MB Whisper API limit (with headroom)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 const AUTO_CHUNK_MINUTES = 20
 const AUTO_CHUNK_THRESHOLD_MINUTES = 45
+const MAX_PARALLEL_CHUNK_TRANSCRIPTIONS = 8
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
@@ -46,6 +47,26 @@ function transformSegments(
       end: transform(word.end),
     })),
   }))
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex
+      nextIndex++
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex)
+    }
+  }))
+
+  return results
 }
 
 async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
@@ -350,15 +371,25 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
       console.log(`✅ Created ${chunkPaths.length} chunks`)
 
-      let offsetOptimizedSeconds = 0
+      const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
       let totalOptimizedSeconds = 0
+      const chunkOffsets = chunkDurations.map((duration) => {
+        const offset = totalOptimizedSeconds
+        totalOptimizedSeconds += duration
+        return offset
+      })
 
-      for (let i = 0; i < chunkPaths.length; i++) {
-        const chunkPath = chunkPaths[i]
+      const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
+      console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
+
+      const chunkTranscriptions = await mapWithConcurrency(chunkPaths, chunkConcurrency, async (chunkPath, i) => {
         console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+        return transcribeWithWhisper(chunkPath, apiKey)
+      })
 
-        const chunkDuration = await getMediaDurationSeconds(chunkPath)
-        const chunkTranscription = await transcribeWithWhisper(chunkPath, apiKey)
+      for (let i = 0; i < chunkTranscriptions.length; i++) {
+        const chunkTranscription = chunkTranscriptions[i]
+        const offsetOptimizedSeconds = chunkOffsets[i]
 
         if (i === 0) {
           language = chunkTranscription.language
@@ -373,9 +404,6 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
         })
 
         mergedSegments.push(...transformed)
-
-        offsetOptimizedSeconds += chunkDuration
-        totalOptimizedSeconds += chunkDuration
       }
 
       originalDurationSeconds = totalOptimizedSeconds * speedFactor
