@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-05-22
+
+### Improved
+- **Parallel Chunk Transcription**: Long media chunks are now transcribed with up to 8 concurrent Whisper API requests.
+  - Preserves deterministic merging and timestamp offsets by precomputing chunk durations before transcription.
+  - Speeds up long movie and large file transcription while keeping the existing chunking behavior.
+
 ## [3.1.0] - 2025-12-19
 
 ### Added

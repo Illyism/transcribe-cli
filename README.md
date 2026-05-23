@@ -68,7 +68,7 @@ This tool:
 - 🎯 **High Accuracy**: Powered by OpenAI's Whisper API
 - ⚡ **Smart Optimization**: Automatic 1.2x speed processing + mono/16kHz extraction (optimized for dialogue)
 - 📝 **SRT Format**: Generates standard SRT subtitle files with precise timestamps
-- 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes)
+- 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes), transcribed with up to 8 parallel requests
 - 🎬 **Editor-Friendly**: Timecode offset, custom output paths, chunk size control
 - 🔧 **Simple Setup**: Easy configuration via environment variable or config file
 - 🌍 **Multi-language**: Automatically detects language
@@ -185,19 +185,19 @@ transcribe movie.mkv --offset 3600         # Same, in seconds
 transcribe long_movie.mkv --chunk-minutes 15
 ```
 
-**Why chunking?** Movies 45+ minutes are automatically split into ~20-minute chunks for reliability. Each chunk is transcribed separately, then merged seamlessly with correct timestamps.
+**Why chunking?** Movies 45+ minutes are automatically split into ~20-minute chunks for reliability. Chunks are transcribed in parallel with up to 8 concurrent requests, then merged seamlessly with correct timestamps.
 
 ### What Happens Automatically
 
 By default, the tool optimizes large files:
 
 ```
-2.7GB video → Extract audio (mono, 16kHz) → Speed up 1.2x → Chunk if >45min → Upload chunks → Transcribe → Merge & adjust timestamps
+2.7GB video → Extract audio (mono, 16kHz) → Speed up 1.2x → Chunk if >45min → Transcribe chunks in parallel → Merge & adjust timestamps
 ```
 
 **For long movies (45+ minutes):**
 - Automatically splits into ~20-minute chunks
-- Transcribes each chunk separately
+- Transcribes chunks in parallel with up to 8 concurrent requests
 - Merges results with correct timestamps
 - Handles 2+ hour movies reliably
 
