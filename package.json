@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "transcribe": "./dist/cli.js"
+    "transcribe": "dist/cli.js"
   },
   "scripts": {
     "build": "bun build src/cli.ts --outdir dist --target node --format esm && bun build src/index.ts --outdir dist --target node --format esm && chmod +x dist/cli.js",
@@ -28,7 +28,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Illyism/transcribe-cli.git"
+    "url": "git+https://github.com/Illyism/transcribe-cli.git"
   },
   "bugs": {
     "url": "https://github.com/Illyism/transcribe-cli/issues"
