@@ -13,7 +13,7 @@ import { existsSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { basename, extname, join } from 'path'
 import { transcribe } from './transcribe'
-import { downloadYouTubeAudio, getVideoId, isYouTubeUrl } from './youtube'
+import { downloadRemoteAudio, getRemoteMediaSlug, isRemoteMediaUrl, isYouTubeUrl } from './youtube'
 
 function parseTimeToSeconds(input: string): number {
   const raw = input.trim()
@@ -93,7 +93,7 @@ async function main() {
     console.log(`
 Transcribe - Audio/Video to SRT
 
-Usage: transcribe <path-to-file-or-youtube-url> [options]
+Usage: transcribe <path-to-file-or-url> [options]
 
 Options:
   -h, --help     Show this help message
@@ -108,6 +108,7 @@ Examples:
   transcribe audio.mp3
   transcribe /path/to/podcast.wav
   transcribe https://www.youtube.com/watch?v=VIDEO_ID
+  transcribe https://x.com/MTSlive/status/2059310566783467782
   transcribe large-video.mp4 --raw
   transcribe movie.mkv --offset 01:00:00.000
   transcribe movie.mkv --output ./subs
@@ -123,7 +124,7 @@ Long movies:
   • Use --chunk-minutes to override.
 
 Supported formats: mp4, mp3, wav, m4a, webm, ogg, opus, mov, avi, mkv
-YouTube: youtube.com, youtu.be, youtube.com/shorts
+Remote URLs: YouTube, X/Twitter, and other sites supported by yt-dlp
 
 Configuration:
   Set OPENAI_API_KEY environment variable or create ~/.transcribe/config.json
@@ -196,26 +197,26 @@ Configuration:
   }
 
   if (!input) {
-    console.error('Error: Missing input file or YouTube URL\nRun: transcribe --help')
+    console.error('Error: Missing input file or URL\nRun: transcribe --help')
     process.exit(1)
   }
   
   let inputPath = input
   let downloadedFile: string | null = null
-  let youtubeVideoId: string | null = null
+  let remoteMediaSlug: string | null = null
   let outputPath: string | undefined
   
   try {
     const apiKey = getApiKey()
     
-    // Check if input is a YouTube URL
-    if (isYouTubeUrl(input)) {
-      youtubeVideoId = getVideoId(input)
-      downloadedFile = await downloadYouTubeAudio(input)
+    // Check if input is a remote URL that yt-dlp can download.
+    if (isRemoteMediaUrl(input) || isYouTubeUrl(input)) {
+      remoteMediaSlug = getRemoteMediaSlug(input)
+      downloadedFile = await downloadRemoteAudio(input)
       inputPath = downloadedFile
-      // Default YouTube output to current working directory (temp downloads are cleaned up)
-      if (!outputArg && youtubeVideoId) {
-        outputPath = join(process.cwd(), `youtube_${youtubeVideoId}.srt`)
+      // Default remote URL output to current working directory (temp downloads are cleaned up)
+      if (!outputArg && remoteMediaSlug) {
+        outputPath = join(process.cwd(), `${remoteMediaSlug}.srt`)
       }
     } else if (!existsSync(inputPath)) {
       console.error(`Error: File not found: ${inputPath}`)
@@ -229,7 +230,7 @@ Configuration:
       if (outputArg.toLowerCase().endsWith('.srt')) {
         outputPath = outputArg
       } else {
-        const base = youtubeVideoId ? `youtube_${youtubeVideoId}` : basename(input, extname(input))
+        const base = remoteMediaSlug || basename(input, extname(input))
         outputPath = join(outputArg, `${base}.srt`)
       }
     }
@@ -255,7 +256,7 @@ Configuration:
     console.error('Error:', error instanceof Error ? error.message : String(error))
     process.exit(1)
   } finally {
-    // Clean up downloaded YouTube file
+    // Clean up downloaded remote media file
     if (downloadedFile && existsSync(downloadedFile)) {
       unlinkSync(downloadedFile)
       console.log('🧹 Cleaned up downloaded file')
