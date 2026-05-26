@@ -52,5 +52,8 @@
   ],
   "devDependencies": {
     "@types/cli-progress": "^3.11.6"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
