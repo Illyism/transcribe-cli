@@ -14,8 +14,8 @@ export interface TranscribeOptions {
    */
   offsetSeconds?: number
   /**
-   * Chunk long media into N-minute pieces and merge results.
-   * If omitted, chunking is automatically enabled for long/large inputs.
+   * Chunk media into N-minute pieces and merge results.
+   * Defaults to 20 minutes. Chunking is always enabled.
    */
   chunkMinutes?: number
 }

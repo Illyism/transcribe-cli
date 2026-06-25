@@ -14,6 +14,7 @@ import { homedir } from 'os'
 import { basename, extname, join } from 'path'
 import { transcribe } from './transcribe'
 import { downloadRemoteAudio, getRemoteMediaSlug, isRemoteMediaUrl, isYouTubeUrl } from './youtube'
+import { extractScreenStudioAudio, getScreenStudioSlug, isScreenStudioInput } from './screenstudio'
 
 function parseTimeToSeconds(input: string): number {
   const raw = input.trim()
@@ -109,21 +110,23 @@ Examples:
   transcribe /path/to/podcast.wav
   transcribe https://www.youtube.com/watch?v=VIDEO_ID
   transcribe https://x.com/MTSlive/status/2059310566783467782
+  transcribe recording.screenstudio
   transcribe large-video.mp4 --raw
   transcribe movie.mkv --offset 01:00:00.000
   transcribe movie.mkv --output ./subs
   transcribe long_movie.mkv --chunk-minutes 15
 
-Optimizations (enabled by default):
+Optimizations (enabled by default, except Screen Studio):
   • 1.2x speed: Faster processing, 99.5% size reduction
   • Automatic timestamp adjustment to original speed
   • Use --raw to disable and use original audio
+  • Screen Studio recordings always use original audio
 
-Long movies:
-  • Chunking is automatically enabled for long inputs to improve reliability.
-  • Use --chunk-minutes to override.
+Chunking (always enabled):
+  • Media is split into ~20 minute chunks by default for reliability
+  • Use --chunk-minutes to override chunk size
 
-Supported formats: mp4, mp3, wav, m4a, webm, ogg, opus, mov, avi, mkv
+Supported formats: mp4, mp3, wav, m4a, webm, ogg, opus, mov, avi, mkv, screenstudio
 Remote URLs: YouTube, X/Twitter, and other sites supported by yt-dlp
 
 Configuration:
@@ -204,6 +207,8 @@ Configuration:
   let inputPath = input
   let downloadedFile: string | null = null
   let remoteMediaSlug: string | null = null
+  let screenStudioSlug: string | null = null
+  let isScreenStudio = false
   let outputPath: string | undefined
   
   try {
@@ -218,6 +223,14 @@ Configuration:
       if (!outputArg && remoteMediaSlug) {
         outputPath = join(process.cwd(), `${remoteMediaSlug}.srt`)
       }
+    } else if (isScreenStudioInput(input)) {
+      isScreenStudio = true
+      screenStudioSlug = getScreenStudioSlug(input)
+      downloadedFile = await extractScreenStudioAudio(input)
+      inputPath = downloadedFile
+      if (!outputArg) {
+        outputPath = join(process.cwd(), `${screenStudioSlug}.srt`)
+      }
     } else if (!existsSync(inputPath)) {
       console.error(`Error: File not found: ${inputPath}`)
       process.exit(1)
@@ -230,7 +243,7 @@ Configuration:
       if (outputArg.toLowerCase().endsWith('.srt')) {
         outputPath = outputArg
       } else {
-        const base = remoteMediaSlug || basename(input, extname(input))
+        const base = remoteMediaSlug || screenStudioSlug || basename(input, extname(input))
         outputPath = join(outputArg, `${base}.srt`)
       }
     }
@@ -238,7 +251,7 @@ Configuration:
     const result = await transcribe({ 
       inputPath, 
       apiKey,
-      optimize: !useRaw,
+      optimize: isScreenStudio ? false : !useRaw,
       outputPath,
       offsetSeconds,
       chunkMinutes,

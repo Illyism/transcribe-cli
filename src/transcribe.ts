@@ -9,7 +9,6 @@ import type { WhisperResponse, WhisperSegment, WhisperWord } from './types'
 const MAX_UPLOAD_MB = 24 // Keep under ~25MB Whisper API limit (with headroom)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 const AUTO_CHUNK_MINUTES = 20
-const AUTO_CHUNK_THRESHOLD_MINUTES = 45
 const MAX_PARALLEL_CHUNK_TRANSCRIPTIONS = 8
 
 function formatTime(seconds: number): string {
@@ -344,15 +343,9 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       speedFactor = optimized.speedFactor
     }
 
-    const fileSizeBytes = statSync(audioPath).size
+    const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
     const durationOptimized = await getMediaDurationSeconds(audioPath)
     const durationOriginal = durationOptimized * speedFactor
-
-    const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
-    const shouldChunk =
-      chunkMinutes !== undefined ||
-      fileSizeBytes > MAX_UPLOAD_BYTES ||
-      durationOriginal > AUTO_CHUNK_THRESHOLD_MINUTES * 60
 
     if (offsetSeconds !== 0) {
       console.log(`🕒 Applying timestamp offset: ${offsetSeconds}s`)
@@ -363,63 +356,50 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     let language = 'unknown'
     let originalDurationSeconds = durationOriginal
 
-    if (shouldChunk) {
-      const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
-      const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
+    const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
+    const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
 
-      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
-      chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
-      console.log(`✅ Created ${chunkPaths.length} chunks`)
+    console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
+    chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
+    console.log(`✅ Created ${chunkPaths.length} chunks`)
 
-      const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
-      let totalOptimizedSeconds = 0
-      const chunkOffsets = chunkDurations.map((duration) => {
-        const offset = totalOptimizedSeconds
-        totalOptimizedSeconds += duration
-        return offset
-      })
+    const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
+    let totalOptimizedSeconds = 0
+    const chunkOffsets = chunkDurations.map((duration) => {
+      const offset = totalOptimizedSeconds
+      totalOptimizedSeconds += duration
+      return offset
+    })
 
-      const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
-      console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
+    const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
+    console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
 
-      const chunkTranscriptions = await mapWithConcurrency(chunkPaths, chunkConcurrency, async (chunkPath, i) => {
-        console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
-        return transcribeWithWhisper(chunkPath, apiKey)
-      })
+    const chunkTranscriptions = await mapWithConcurrency(chunkPaths, chunkConcurrency, async (chunkPath, i) => {
+      console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+      return transcribeWithWhisper(chunkPath, apiKey)
+    })
 
-      for (let i = 0; i < chunkTranscriptions.length; i++) {
-        const chunkTranscription = chunkTranscriptions[i]
-        const offsetOptimizedSeconds = chunkOffsets[i]
+    for (let i = 0; i < chunkTranscriptions.length; i++) {
+      const chunkTranscription = chunkTranscriptions[i]
+      const offsetOptimizedSeconds = chunkOffsets[i]
 
-        if (i === 0) {
-          language = chunkTranscription.language
-        }
-
-        mergedText += chunkTranscription.text + '\n'
-
-        const transformed = transformSegments(chunkTranscription.segments, (t) => {
-          // chunk audio timestamps are in optimized time; map to global original timeline:
-          // (localChunkTime + chunkOffsetOptimized) * speedFactor + userOffsetSeconds
-          return (t + offsetOptimizedSeconds) * speedFactor + offsetSeconds
-        })
-
-        mergedSegments.push(...transformed)
+      if (i === 0) {
+        language = chunkTranscription.language
       }
 
-      originalDurationSeconds = totalOptimizedSeconds * speedFactor
-      console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
-    } else {
-      // Transcribe with Whisper
-      console.log('🎙️  Transcribing with OpenAI Whisper API...')
-      const transcription = await transcribeWithWhisper(audioPath, apiKey)
-      language = transcription.language
-      mergedText = transcription.text
+      mergedText += chunkTranscription.text + '\n'
 
-      mergedSegments = transformSegments(transcription.segments, (t) => t * speedFactor + offsetSeconds)
-      originalDurationSeconds = transcription.duration * speedFactor
+      const transformed = transformSegments(chunkTranscription.segments, (t) => {
+        // chunk audio timestamps are in optimized time; map to global original timeline:
+        // (localChunkTime + chunkOffsetOptimized) * speedFactor + userOffsetSeconds
+        return (t + offsetOptimizedSeconds) * speedFactor + offsetSeconds
+      })
 
-      console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
+      mergedSegments.push(...transformed)
     }
+
+    originalDurationSeconds = totalOptimizedSeconds * speedFactor
+    console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
 
     // Sort segments by start time (important for chunked transcriptions)
     mergedSegments.sort((a, b) => a.start - b.start)

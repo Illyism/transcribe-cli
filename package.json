@@ -9,7 +9,7 @@
     "transcribe": "dist/cli.js"
   },
   "scripts": {
-    "build": "bun build src/cli.ts --outdir dist --target node --format esm && bun build src/index.ts --outdir dist --target node --format esm && chmod +x dist/cli.js",
+    "build": "bun build src/cli.ts --outdir dist --target node --format esm --external openai && bun build src/index.ts --outdir dist --target node --format esm --external openai && chmod +x dist/cli.js",
     "dev": "bun src/cli.ts",
     "prepublishOnly": "bun run build"
   },
