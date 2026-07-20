@@ -1,6 +1,6 @@
 {
   "name": "@illyism/transcribe",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "description": "CLI tool to transcribe audio/video files to SRT format using OpenAI Whisper API",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "transcribe": "dist/cli.js"
   },
   "scripts": {
-    "build": "bun build src/cli.ts --outdir dist --target node --format esm --external openai && bun build src/index.ts --outdir dist --target node --format esm --external openai && chmod +x dist/cli.js",
+    "build": "bun build src/cli.ts --outdir dist --target node --format esm --external openai --external @clack/prompts && bun build src/index.ts --outdir dist --target node --format esm --external openai && chmod +x dist/cli.js",
     "dev": "bun src/cli.ts",
     "prepublishOnly": "bun run build"
   },
@@ -38,6 +38,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "cli-progress": "^3.12.0",
     "openai": "^4.0.0",
     "picocolors": "^1.1.1"
