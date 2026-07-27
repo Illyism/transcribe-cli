@@ -9,15 +9,10 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 export async function optimizeAudio(inputPath: string): Promise<{ path: string; speedFactor: number }> {
   const fileSize = statSync(inputPath).size
   const fileSizeMB = fileSize / 1024 / 1024
-  
-  console.log(`📊 File size: ${fileSizeMB.toFixed(2)} MB`)
-  
-  // Always optimize with speed first (best results from A/B testing)
-  console.log(`⚡ Optimizing: Speeding up audio by ${SPEED_FACTOR}x for faster processing...`)
-  
+
   const dir = dirname(inputPath)
   const speedOptimizedPath = join(dir, `optimized_speed_${Date.now()}.mp3`)
-  
+
   await new Promise<void>((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
       '-i', inputPath,
@@ -35,7 +30,7 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
         const optimizedSize = statSync(speedOptimizedPath).size
         const optimizedSizeMB = optimizedSize / 1024 / 1024
         const reduction = ((1 - optimizedSize / fileSize) * 100).toFixed(1)
-        console.log(`✅ Speed optimization complete: ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
+        console.log(`⚡ Speed optimization (1.2x): ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
         resolve()
       } else {
         reject(new Error(`FFmpeg optimization failed with code ${code}`))
@@ -50,8 +45,6 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
   const speedOptimizedSizeMB = speedOptimizedSize / 1024 / 1024
   
   if (speedOptimizedSize > MAX_FILE_SIZE_BYTES) {
-    console.log(`⚠️  File still too large (${speedOptimizedSizeMB.toFixed(2)} MB > 24 MB), applying additional compression...`)
-    
     const finalPath = join(dir, `optimized_final_${Date.now()}.ogg`)
     
     // Calculate bitrate needed to stay under 24MB
@@ -74,7 +67,7 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
         if (code === 0) {
           const finalSize = statSync(finalPath).size
           const finalSizeMB = finalSize / 1024 / 1024
-          console.log(`✅ Additional compression complete: ${speedOptimizedSizeMB.toFixed(2)} MB → ${finalSizeMB.toFixed(2)} MB (${safeBitrate}k bitrate)`)
+          console.log(`🗜️ Compressed for 24MB limit: ${speedOptimizedSizeMB.toFixed(2)} MB → ${finalSizeMB.toFixed(2)} MB (${safeBitrate}k Opus)`)
           resolve()
         } else {
           reject(new Error(`FFmpeg compression failed with code ${code}`))

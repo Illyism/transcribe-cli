@@ -173,7 +173,6 @@ export async function extractScreenStudioAudio(inputPath: string): Promise<strin
       rmSync(workDir, { recursive: true, force: true })
     }
 
-    console.log('✅ Screen Studio audio extraction complete!')
     return outputPath
   } finally {
     if (extractedDir && existsSync(extractedDir)) {

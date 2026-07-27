@@ -6,7 +6,7 @@ description: How audio optimization works and when it's applied
 
 ## Default Behavior
 
-**ALL files are optimized by default with 1.2x speed** (based on A/B test results)
+**Files 5 minutes (300 seconds) or longer are optimized by default with 1.2x speed** (based on A/B test results). Files under 5 minutes use original (raw) audio automatically.
 
 ### Why 1.2x Speed?
 

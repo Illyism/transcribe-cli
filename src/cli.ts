@@ -225,7 +225,6 @@ async function transcribeOne(
   } finally {
     if (downloadedFile && existsSync(downloadedFile)) {
       unlinkSync(downloadedFile)
-      console.log('🧹 Cleaned up downloaded file')
     }
   }
 }
@@ -275,10 +274,11 @@ Folders:
   • Interactive prompt: select all, or choose files individually
   • Each .srt is written next to its source file (or into -o)
 
-Optimizations (enabled by default, except Screen Studio):
-  • 1.2x speed: Faster processing, 99.5% size reduction
+Optimizations (enabled by default for files >= 5 minutes, except Screen Studio):
+  • 1.2x speed: Faster processing for files 5 minutes or longer
+  • Files under 5 minutes use original (raw) audio automatically
   • Automatic timestamp adjustment to original speed
-  • Use --raw to disable and use original audio
+  • Use --raw to force original audio on all files
   • Screen Studio recordings always use original audio
 
 Chunking (always enabled):
@@ -412,7 +412,7 @@ Configuration:
           }
 
           const result = await transcribeOne(filePath, apiKey, options, outputPath)
-          console.log(`✅ Saved: ${result.srtPath}`)
+          console.log(`✅ Saved: ${result.srtPath} (${result.language}, ${result.duration.toFixed(2)}s)`)
           succeeded++
         } catch (error) {
           failed++

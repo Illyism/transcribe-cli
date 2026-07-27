@@ -328,13 +328,15 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     tempAudioPath = join(dir, `${baseName}_temp.mp3`)
     
     await extractAudio(inputPath, tempAudioPath)
-    console.log('✅ Audio extraction complete!')
     audioPath = tempAudioPath
   }
   
   try {
-    // Optimize audio if enabled
-    if (optimize) {
+    const initialDuration = await getMediaDurationSeconds(audioPath)
+
+    // Optimization (1.2x speedup) is only applied to media 5 minutes (300 seconds) or longer
+    const MIN_OPTIMIZE_DURATION_SECONDS = 300
+    if (optimize && initialDuration >= MIN_OPTIMIZE_DURATION_SECONDS) {
       const optimized = await optimizeAudio(audioPath)
       if (optimized.path !== audioPath) {
         optimizedPath = optimized.path
@@ -343,8 +345,7 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       speedFactor = optimized.speedFactor
     }
 
-    const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
-    const durationOptimized = await getMediaDurationSeconds(audioPath)
+    const durationOptimized = speedFactor === 1.0 ? initialDuration : await getMediaDurationSeconds(audioPath)
     const durationOriginal = durationOptimized * speedFactor
 
     if (offsetSeconds !== 0) {
@@ -356,12 +357,16 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     let language = 'unknown'
     let originalDurationSeconds = durationOriginal
 
+    const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
     const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
     const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
 
-    console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
     chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
-    console.log(`✅ Created ${chunkPaths.length} chunks`)
+
+    if (chunkPaths.length > 1) {
+      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
+      console.log(`✅ Created ${chunkPaths.length} chunks`)
+    }
 
     const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
     let totalOptimizedSeconds = 0
@@ -372,10 +377,16 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     })
 
     const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
-    console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
+    if (chunkPaths.length > 1) {
+      console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
+    } else {
+      console.log('🎙️  Transcribing...')
+    }
 
     const chunkTranscriptions = await mapWithConcurrency(chunkPaths, chunkConcurrency, async (chunkPath, i) => {
-      console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+      if (chunkPaths.length > 1) {
+        console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+      }
       return transcribeWithWhisper(chunkPath, apiKey)
     })
 
@@ -399,7 +410,6 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     }
 
     originalDurationSeconds = totalOptimizedSeconds * speedFactor
-    console.log(`✅ Transcription complete! Language: ${language}, Duration: ${originalDurationSeconds.toFixed(2)}s`)
 
     // Sort segments by start time (important for chunked transcriptions)
     mergedSegments.sort((a, b) => a.start - b.start)
@@ -431,9 +441,6 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     }
     if (optimizedPath && existsSync(optimizedPath)) {
       unlinkSync(optimizedPath)
-    }
-    if (chunkPaths.length || tempAudioPath || optimizedPath) {
-      console.log('🧹 Cleaned up temporary files')
     }
   }
 }
