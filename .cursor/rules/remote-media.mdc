@@ -1,0 +1,44 @@
+---
+globs: src/remote/**/*.ts,src/cli.ts
+---
+
+# Remote Media Download
+
+Remote URLs (YouTube, Instagram, X/Twitter, and other yt-dlp sites) are handled by [`src/remote/`](mdc:src/remote/index.ts).
+
+## Module layout
+
+- **providers.ts** — site registry (`youtube`, `instagram`, `generic`): match, normalize, slug, `needsCookies`
+- **urls.ts** — `isRemoteMediaUrl`, `normalizeRemoteMediaUrl`, `getRemoteMediaSlug`
+- **ytdlp.ts** — `probeInfo` / `extractAudio` process wrappers
+- **cookies.ts** — `--cookies-from-browser` resolution (Instagram)
+- **progress.ts** — percent bar or live spinner
+- **index.ts** — `downloadRemoteAudio` orchestration
+
+## URL Detection
+
+```typescript
+import { isRemoteMediaUrl, isYouTubeUrl, isInstagramUrl } from './remote'
+
+isYouTubeUrl('https://youtu.be/VIDEO_ID')
+isInstagramUrl('https://www.instagram.com/reel/SHORTCODE/')
+isRemoteMediaUrl('https://x.com/user/status/123') // generic http(s)
+```
+
+YouTube supports watch, Shorts, and youtu.be (with or without `https://`).
+Instagram supports `/reel/`, `/reels/`, `/p/`, `/tv/`.
+
+## Download Strategy
+
+Always extract audio-only via yt-dlp (`-x --audio-format mp3`) into the system temp directory. Clean up the downloaded file in a `finally` block after transcription.
+
+Instagram (and other `needsCookies` providers) auto-detect browser cookies. Override with `--cookies-from-browser chrome`.
+
+## Adding a site
+
+Add a `RemoteProvider` in `providers.ts` (before `generic`). Prefer that over branching inside `downloadRemoteAudio`.
+
+## Progress UX
+
+- Known filesize → percent bar
+- Unknown size (HLS, etc.) → live spinner with bytes/speed

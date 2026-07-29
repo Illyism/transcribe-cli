@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
 [![npm downloads](https://img.shields.io/npm/dt/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
+[![skills.sh](https://skills.sh/b/Illyism/transcribe-cli)](https://skills.sh/Illyism/transcribe-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Transcribe audio/video files to SRT subtitles in one command. Optimized for large files, long movies, and video editing workflows.
@@ -76,6 +77,16 @@ This tool:
 
 ## Installation & Setup
 
+### Agent Skills (skills.sh)
+
+Install AI agent skills directly via [skills.sh](https://skills.sh/Illyism/transcribe-cli):
+
+```bash
+npx skills add Illyism/transcribe-cli
+```
+
+Includes `transcribe`, `summarize-transcript`, `video-to-social`, `youtube-chapters`, and `format-converter`. See [skills/](skills/README.md) for details.
+
 ### Option 1: Use Instantly (No Install)
 
 ```bash
@@ -107,7 +118,7 @@ choco install ffmpeg
 </details>
 
 <details>
-<summary><b>🎥 Install yt-dlp</b> (optional, for YouTube)</summary>
+<summary><b>🎥 Install yt-dlp</b> (optional, for YouTube / Instagram / remote URLs)</summary>
 
 ```bash
 # macOS
@@ -158,6 +169,10 @@ transcribe video.mp4
 
 # YouTube video
 transcribe https://www.youtube.com/watch?v=VIDEO_ID
+
+# Instagram Reel (uses your browser login cookies automatically)
+transcribe https://www.instagram.com/reel/SHORTCODE/
+transcribe https://www.instagram.com/reel/SHORTCODE/ --cookies-from-browser chrome
 
 # Audio file
 transcribe podcast.mp3
@@ -258,6 +273,7 @@ interface TranscribeResult {
 - **Video**: MP4, WebM, MOV, AVI, MKV
 - **Audio**: MP3, WAV, M4A, OGG, Opus
 - **YouTube**: All videos, Shorts, youtu.be links
+- **Instagram**: Reels, posts, and IGTV (requires a logged-in browser for cookies)
 </details>
 
 <details>

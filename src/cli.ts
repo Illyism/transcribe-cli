@@ -15,7 +15,7 @@ import { homedir } from 'os'
 import { basename, extname, join, resolve } from 'path'
 import { extractScreenStudioAudio, getScreenStudioSlug, isScreenStudioInput } from './screenstudio'
 import { transcribe } from './transcribe'
-import { downloadRemoteAudio, getRemoteMediaSlug, isRemoteMediaUrl, isYouTubeUrl } from './youtube'
+import { downloadRemoteAudio, getRemoteMediaSlug, isRemoteMediaUrl } from './remote'
 
 const SUPPORTED_EXTENSIONS = new Set([
   '.mp4', '.mp3', '.wav', '.m4a', '.webm', '.ogg', '.opus', '.mov', '.avi', '.mkv', '.screenstudio',
@@ -170,6 +170,7 @@ interface CliOptions {
   outputArg: string | null
   offsetSeconds?: number
   chunkMinutes?: number
+  cookiesFromBrowser?: string
 }
 
 async function transcribeOne(
@@ -186,9 +187,11 @@ async function transcribeOne(
   let outputPath: string | undefined = outputOverride
 
   try {
-    if (isRemoteMediaUrl(input) || isYouTubeUrl(input)) {
+    if (isRemoteMediaUrl(input)) {
       remoteMediaSlug = getRemoteMediaSlug(input)
-      downloadedFile = await downloadRemoteAudio(input)
+      downloadedFile = await downloadRemoteAudio(input, {
+        cookiesFromBrowser: options.cookiesFromBrowser,
+      })
       inputPath = downloadedFile
       if (!options.outputArg && !outputOverride && remoteMediaSlug) {
         outputPath = join(process.cwd(), `${remoteMediaSlug}.srt`)
@@ -255,6 +258,8 @@ Options:
   -o, --output   Output .srt path (file) OR output directory (folder)
   --offset       Shift subtitle timestamps (seconds or HH:MM:SS.mmm)
   --chunk-minutes  Force chunking into N-minute pieces (helps long movies)
+  --cookies-from-browser  Browser for yt-dlp cookies (chrome, safari, firefox, ...)
+                          Auto-detected for Instagram when omitted
 
 Examples:
   transcribe video.mp4
@@ -262,12 +267,14 @@ Examples:
   transcribe /path/to/podcast.wav
   transcribe ./day-9
   transcribe https://www.youtube.com/watch?v=VIDEO_ID
+  transcribe https://www.instagram.com/reel/SHORTCODE/
   transcribe https://x.com/MTSlive/status/2059310566783467782
   transcribe recording.screenstudio
   transcribe large-video.mp4 --raw
   transcribe movie.mkv --offset 01:00:00.000
   transcribe movie.mkv --output ./subs
   transcribe long_movie.mkv --chunk-minutes 15
+  transcribe https://www.instagram.com/reel/SHORTCODE/ --cookies-from-browser chrome
 
 Folders:
   • Pass a folder to bulk-transcribe media inside it
@@ -286,7 +293,8 @@ Chunking (always enabled):
   • Use --chunk-minutes to override chunk size
 
 Supported formats: mp4, mp3, wav, m4a, webm, ogg, opus, mov, avi, mkv, screenstudio
-Remote URLs: YouTube, X/Twitter, and other sites supported by yt-dlp
+Remote URLs: YouTube, Instagram Reels/posts, X/Twitter, and other yt-dlp sites
+  • Instagram usually needs a logged-in browser (cookies auto-detected)
 
 Configuration:
   Set OPENAI_API_KEY environment variable or create ~/.transcribe/config.json
@@ -305,6 +313,7 @@ Configuration:
   let outputArg: string | null = null
   let offsetSeconds: number | undefined
   let chunkMinutes: number | undefined
+  let cookiesFromBrowser: string | undefined
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -347,6 +356,17 @@ Configuration:
       continue
     }
 
+    if (arg === '--cookies-from-browser') {
+      const raw = args[i + 1]
+      if (!raw) {
+        console.error('Error: --cookies-from-browser requires a browser name (chrome, safari, firefox, ...)')
+        process.exit(1)
+      }
+      cookiesFromBrowser = raw
+      i++
+      continue
+    }
+
     if (arg.startsWith('-')) {
       console.error(`Error: Unknown option: ${arg}\nRun: transcribe --help`)
       process.exit(1)
@@ -363,7 +383,7 @@ Configuration:
     process.exit(1)
   }
 
-  const options: CliOptions = { useRaw, outputArg, offsetSeconds, chunkMinutes }
+  const options: CliOptions = { useRaw, outputArg, offsetSeconds, chunkMinutes, cookiesFromBrowser }
   
   try {
     const apiKey = getApiKey()

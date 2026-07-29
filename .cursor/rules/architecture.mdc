@@ -13,27 +13,28 @@ This is a dual-mode package (CLI + Library):
 - **[src/cli.ts](mdc:src/cli.ts)**: CLI entry point with argument parsing and user-facing commands
 - **[src/transcribe.ts](mdc:src/transcribe.ts)**: Core transcription logic with automatic optimization
 - **[src/optimize.ts](mdc:src/optimize.ts)**: Audio optimization (1.2x speed) and SRT timestamp adjustment
-- **[src/youtube.ts](mdc:src/youtube.ts)**: YouTube video download and audio extraction
+- **[src/remote/](mdc:src/remote/index.ts)**: Remote URL download via yt-dlp (YouTube, Instagram, X, etc.)
+- **[src/screenstudio.ts](mdc:src/screenstudio.ts)**: Screen Studio microphone audio extraction
 - **[src/types.ts](mdc:src/types.ts)**: TypeScript interfaces for Whisper API responses
 - **[src/index.ts](mdc:src/index.ts)**: Library entry point with public API exports
 
 ### Key Patterns
 
-1. **Optimization by Default**: All files are automatically optimized with 1.2x speed unless `--raw` flag is used
+1. **Optimization by Default**: Files 5+ minutes are optimized with 1.2x speed unless `--raw` is used (shorter files stay raw)
 2. **Automatic Cleanup**: All temporary files (extracted audio, optimized audio, downloaded files) are cleaned up in `finally` blocks
-3. **Progressive Enhancement**: Works with local files, videos, and YouTube URLs
+3. **Progressive Enhancement**: Works with local files, videos, Screen Studio, and remote URLs
 4. **Error Messages**: Include helpful links and copy-paste commands for setup
 
 ## Data Flow
 
 ```
-Input → YouTube Download (if URL) → Extract Audio (if video) → Optimize (if enabled) → Whisper API → SRT Generation → Timestamp Adjustment → Cleanup
+Input → Remote Download (if URL) → Extract Audio (if video) → Optimize (if enabled) → Whisper API → SRT Generation → Timestamp Adjustment → Cleanup
 ```
 
 ## Dependencies
 
 - **openai**: Official OpenAI SDK for Whisper API
-- **@distube/ytdl-core**: YouTube video/audio download
+- **yt-dlp** (external): Remote media download (YouTube, Instagram, etc.)
 - **FFmpeg** (peer): Required for video/audio processing
 
 ## Build Process

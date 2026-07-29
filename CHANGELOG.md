@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-07-29
+
+### Added
+- **Instagram Reels Support**: Transcribe Instagram Reels (`/reel/`, `/reels/`, `/p/`) directly using automatic browser cookie login resolution.
+- **`--cookies-from-browser` Flag**: Pass `--cookies-from-browser <browser>` (e.g. `chrome`, `safari`) to override browser cookie detection for authenticated sites.
+- **Agent Skills**: Published user-focused AI agent skills under `skills/` (compatible with `skills.sh`) for `transcribe`, `summarize-transcript`, `video-to-social`, `youtube-chapters`, and `format-converter`.
+
+### Refactored
+- **Modular Remote Architecture**: Split monolithic `src/youtube.ts` into `src/remote/` module (`providers.ts`, `urls.ts`, `ytdlp.ts`, `cookies.ts`, `progress.ts`).
+
 ## [3.6.0] - 2026-07-27
 
 ### Changed
