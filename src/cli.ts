@@ -31,6 +31,7 @@ import {
   getScreenStudioSlug,
   isScreenStudioInput,
 } from "./screenstudio";
+import { installMacQuickAction } from "./mac";
 import { transcribe } from "./transcribe";
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -236,8 +237,10 @@ async function transcribeOne(
   let isScreenStudio = false;
   let outputPath: string | undefined = outputOverride;
 
+  const isLocalFile = existsSync(input);
+
   try {
-    if (isRemoteMediaUrl(input)) {
+    if (!isLocalFile && isRemoteMediaUrl(input)) {
       remoteMediaSlug = getRemoteMediaSlug(input);
       downloadedFile = await downloadRemoteAudio(input, {
         cookiesFromBrowser: options.cookiesFromBrowser,
@@ -254,8 +257,8 @@ async function transcribeOne(
       if (!options.outputArg && !outputOverride) {
         outputPath = join(process.cwd(), `${screenStudioSlug}.srt`);
       }
-    } else if (!existsSync(inputPath)) {
-      throw new Error(`File not found: ${inputPath}`);
+    } else if (!isLocalFile) {
+      throw new Error(`File not found: ${resolve(inputPath)}`);
     }
 
     if (options.outputArg && !outputOverride) {
@@ -320,6 +323,7 @@ Options:
   --chunk-minutes  Force chunking into N-minute pieces (helps long movies)
   --cookies-from-browser  Browser for yt-dlp cookies (chrome, safari, firefox, ...)
                           Auto-detected for Instagram when omitted
+  --install-mac-action    Install macOS Finder right-click Quick Action
 
 Examples:
   transcribe video.mp4
@@ -359,6 +363,11 @@ Remote URLs: YouTube, Instagram Reels/posts, X/Twitter, and other yt-dlp sites
 Configuration:
   Set OPENAI_API_KEY environment variable or create ~/.transcribe/config.json
     `);
+    process.exit(0);
+  }
+
+  if (args.includes("--install-mac-action")) {
+    installMacQuickAction();
     process.exit(0);
   }
 

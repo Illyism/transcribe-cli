@@ -77,6 +77,17 @@ This tool:
 
 ## Installation & Setup
 
+### 🍏 macOS Right-Click Finder Integration
+
+Turn `@illyism/transcribe` into a native macOS right-click Finder action:
+
+```bash
+npx @illyism/transcribe --install-mac-action
+```
+
+Once installed, **right-click any video or audio file in Finder → Quick Actions → Transcribe Subtitles**.
+It runs in the background and sends a macOS System Notification when the `.srt` is saved!
+
 ### Agent Skills (skills.sh)
 
 Install AI agent skills directly via [skills.sh](https://skills.sh/Illyism/transcribe-cli):

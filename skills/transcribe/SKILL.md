@@ -39,8 +39,8 @@ Apply flags based on specific requirements:
   *Note*: Files under 5 minutes use raw audio automatically. Use `--raw` only when 100% original audio speed is required on files >= 5 minutes.
 - **Timecode offset**: `--offset 01:00:00.000` or `--offset 3600`
   *Note*: Shifts subtitle start timestamps to align with NLE video editor timelines (e.g. Premiere, Final Cut, Resolve).
-- **Custom chunk size**: `--chunk-minutes 10`
-  *Note*: Media is automatically split into ~20-minute chunks for Whisper API upload reliability. Use smaller chunks if a file exceeds Whisper's 25MB limit.
+- **Install macOS Finder Quick Action**: `--install-mac-action`
+  *Note*: Adds a right-click "Transcribe Subtitles" menu option directly into Finder on macOS.
 
 ## Troubleshooting Decision Tree
 

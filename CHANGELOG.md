@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-07-30
+
+### Added
+- **macOS Finder Quick Action**: Added `--install-mac-action` flag to install a native macOS right-click Finder Quick Action ("Transcribe Subtitles") with system notifications.
+
+### Fixed
+- **URL vs Path Disambiguation**: Fixed URL validation logic in remote providers so local file paths are never falsely identified as remote URLs.
+
 ## [3.7.0] - 2026-07-29
 
 ### Added

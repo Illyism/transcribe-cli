@@ -22,12 +22,22 @@ function hostWithoutWww(hostname: string): string {
   return hostname.replace(/^www\./, "");
 }
 
+/**
+ * Without a scheme, only `host.tld/...` shapes count as URLs. Anything else
+ * (`/Users/me/clip.mp4`, `./clip.mov`, `C:\clip.mkv`) is a filesystem path,
+ * which `new URL()` would happily reinterpret as a hostname.
+ */
+const SCHEMELESS_URL =
+  /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?::\d+)?[/?#]/i;
+
 function ensureUrl(input: string): URL | null {
-  const withProtocol = /^(https?:\/\/)/i.test(input)
-    ? input
-    : `https://${input}`;
+  const trimmed = input.trim();
+  const hasScheme = /^https?:\/\//i.test(trimmed);
+  if (!hasScheme && !SCHEMELESS_URL.test(trimmed)) return null;
+
   try {
-    return new URL(withProtocol);
+    const url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
+    return url.hostname ? url : null;
   } catch {
     return null;
   }
