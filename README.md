@@ -77,16 +77,68 @@ This tool:
 
 ## Installation & Setup
 
-### 🍏 macOS Right-Click Finder Integration
+### 🍏 macOS & Automation Integrations
 
-Turn `@illyism/transcribe` into a native macOS right-click Finder action:
+Make transcribing effortless on macOS with right-click Quick Actions, Apple Shortcuts, Raycast, or Drop Zone folders:
+
+<details open>
+<summary><b>🖱️ Right-Click Finder Quick Action (Easiest)</b></summary>
+
+Install the native Finder Quick Action in one second:
 
 ```bash
 npx @illyism/transcribe --install-mac-action
 ```
 
-Once installed, **right-click any video or audio file in Finder → Quick Actions → Transcribe Subtitles**.
-It runs in the background and sends a macOS System Notification when the `.srt` is saved!
+**Usage:** Right-click any video or audio file in Finder → **Quick Actions** → **Transcribe Subtitles**. Runs in the background and sends a Mac System Notification when the `.srt` is ready next to your media file.
+</details>
+
+<details>
+<summary><b>⚡ Apple Shortcuts (Menu Bar / Hotkey)</b></summary>
+
+1. Open **Shortcuts.app** on Mac → Create a new Shortcut.
+2. Enable **Use as Quick Action** in shortcut settings.
+3. Add action: **Run Shell Script** (`/bin/zsh`):
+   ```bash
+   export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+   npx @illyism/transcribe "$1"
+   ```
+4. Pin it to your **Mac Menu Bar** or assign a global keyboard shortcut (e.g. `Cmd + Opt + T`) to transcribe selected files or copied URLs!
+</details>
+
+<details>
+<summary><b>🚀 Raycast / Alfred Script Command</b></summary>
+
+Create a Raycast Script Command (`transcribe.sh`):
+
+```bash
+#!/bin/bash
+# @raycast.schemaVersion 1
+# @raycast.title Transcribe File or URL
+# @raycast.mode compact
+# @raycast.argument1 { "type": "text", "placeholder": "File path or YouTube/Reel URL" }
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+npx @illyism/transcribe "$1"
+```
+
+Trigger with `Cmd + Space` → `Transcribe` → paste any URL or file path!
+</details>
+
+<details>
+<summary><b>📁 Drop Zone Folder (Automator Folder Action)</b></summary>
+
+1. Create a folder on your Desktop: `~/Desktop/Transcribe Drop Zone`
+2. Open **Automator.app** → New Document → **Folder Action** → choose `~/Desktop/Transcribe Drop Zone`.
+3. Add action: **Run Shell Script**:
+   ```bash
+   export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+   for f in "$@"; do
+     npx @illyism/transcribe "$f"
+   done
+   ```
+Whenever you drop video or audio files into `~/Desktop/Transcribe Drop Zone`, subtitles are generated automatically in the background.
+</details>
 
 ### Agent Skills (skills.sh)
 
