@@ -11,7 +11,9 @@ This is a dual-mode package (CLI + Library):
 ### Core Files
 
 - **[src/cli.ts](mdc:src/cli.ts)**: CLI entry point with argument parsing and user-facing commands
+- **[src/input.ts](mdc:src/input.ts)**: Input classification (file/folder/bundle/URL), media discovery, time parsing
 - **[src/transcribe.ts](mdc:src/transcribe.ts)**: Core transcription logic with automatic optimization
+- **[src/srt.ts](mdc:src/srt.ts)**: SRT formatting and chunk/speed/offset timeline math
 - **[src/optimize.ts](mdc:src/optimize.ts)**: Audio optimization (1.2x speed) and SRT timestamp adjustment
 - **[src/remote/](mdc:src/remote/index.ts)**: Remote URL download via yt-dlp (YouTube, Instagram, X, etc.)
 - **[src/screenstudio.ts](mdc:src/screenstudio.ts)**: Screen Studio microphone audio extraction

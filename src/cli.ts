@@ -18,74 +18,24 @@ import {
   outro,
   select,
 } from "@clack/prompts";
-import { existsSync, readdirSync, statSync, unlinkSync } from "fs";
+import { existsSync, statSync, unlinkSync } from "fs";
 import { homedir } from "os";
 import { basename, extname, join, resolve } from "path";
 import {
+  listMediaFilesInDir,
+  parseTimeToSeconds,
+  resolveInputKind,
+} from "./input";
+import {
   downloadRemoteAudio,
   getRemoteMediaSlug,
-  isRemoteMediaUrl,
 } from "./remote";
 import {
   extractScreenStudioAudio,
   getScreenStudioSlug,
-  isScreenStudioInput,
 } from "./screenstudio";
 import { installMacQuickAction } from "./mac";
 import { transcribe } from "./transcribe";
-
-const SUPPORTED_EXTENSIONS = new Set([
-  ".mp4",
-  ".mp3",
-  ".wav",
-  ".m4a",
-  ".webm",
-  ".ogg",
-  ".opus",
-  ".mov",
-  ".avi",
-  ".mkv",
-  ".screenstudio",
-]);
-
-function parseTimeToSeconds(input: string): number {
-  const raw = input.trim();
-  if (!raw) {
-    throw new Error("Invalid time format: empty value");
-  }
-
-  // Seconds (supports negatives and decimals)
-  if (/^-?\d+(\.\d+)?$/.test(raw)) {
-    return parseFloat(raw);
-  }
-
-  // HH:MM:SS(.mmm) or MM:SS(.mmm)
-  const normalized = raw.replace(",", ".");
-  const parts = normalized.split(":");
-
-  const parsePart = (value: string) => {
-    const n = parseFloat(value);
-    if (!Number.isFinite(n)) throw new Error(`Invalid time format: ${input}`);
-    return n;
-  };
-
-  if (parts.length === 2) {
-    const mm = parsePart(parts[0]);
-    const ss = parsePart(parts[1]);
-    return mm * 60 + ss;
-  }
-
-  if (parts.length === 3) {
-    const hh = parsePart(parts[0]);
-    const mm = parsePart(parts[1]);
-    const ss = parsePart(parts[2]);
-    return hh * 3600 + mm * 60 + ss;
-  }
-
-  throw new Error(
-    `Invalid time format: ${input}\nUse seconds (123.45) or HH:MM:SS(.mmm)`
-  );
-}
 
 function getApiKey(): string {
   // Try environment variable first
@@ -126,26 +76,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024)
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function listMediaFilesInDir(dirPath: string): string[] {
-  return readdirSync(dirPath)
-    .filter((name) => {
-      const fullPath = join(dirPath, name);
-      try {
-        const stat = statSync(fullPath);
-        if (stat.isDirectory()) {
-          return name.toLowerCase().endsWith(".screenstudio");
-        }
-        return SUPPORTED_EXTENSIONS.has(extname(name).toLowerCase());
-      } catch {
-        return false;
-      }
-    })
-    .sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
-    )
-    .map((name) => join(dirPath, name));
 }
 
 async function promptFolderSelection(files: string[]): Promise<string[]> {
@@ -237,10 +167,10 @@ async function transcribeOne(
   let isScreenStudio = false;
   let outputPath: string | undefined = outputOverride;
 
-  const isLocalFile = existsSync(input);
+  const inputKind = resolveInputKind(input);
 
   try {
-    if (!isLocalFile && isRemoteMediaUrl(input)) {
+    if (inputKind === "remote") {
       remoteMediaSlug = getRemoteMediaSlug(input);
       downloadedFile = await downloadRemoteAudio(input, {
         cookiesFromBrowser: options.cookiesFromBrowser,
@@ -249,7 +179,7 @@ async function transcribeOne(
       if (!options.outputArg && !outputOverride && remoteMediaSlug) {
         outputPath = join(process.cwd(), `${remoteMediaSlug}.srt`);
       }
-    } else if (isScreenStudioInput(input)) {
+    } else if (inputKind === "screenstudio") {
       isScreenStudio = true;
       screenStudioSlug = getScreenStudioSlug(input);
       downloadedFile = await extractScreenStudioAudio(input);
@@ -257,7 +187,7 @@ async function transcribeOne(
       if (!options.outputArg && !outputOverride) {
         outputPath = join(process.cwd(), `${screenStudioSlug}.srt`);
       }
-    } else if (!isLocalFile) {
+    } else if (inputKind === "missing") {
       throw new Error(`File not found: ${resolve(inputPath)}`);
     }
 
@@ -470,12 +400,8 @@ Configuration:
     const apiKey = getApiKey();
     const resolvedInput = resolve(input);
 
-    // Folder bulk mode (not a Screen Studio bundle)
-    if (
-      existsSync(resolvedInput) &&
-      statSync(resolvedInput).isDirectory() &&
-      !isScreenStudioInput(resolvedInput)
-    ) {
+    // Folder bulk mode (a Screen Studio bundle is a directory, but not a folder of media)
+    if (resolveInputKind(resolvedInput) === "folder") {
       const mediaFiles = listMediaFilesInDir(resolvedInput);
       if (mediaFiles.length === 0) {
         console.error(

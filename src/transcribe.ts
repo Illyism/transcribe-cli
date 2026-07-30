@@ -4,49 +4,13 @@ import { writeFile } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import type { TranscribeOptions, TranscribeResult } from './index'
 import { optimizeAudio } from './optimize'
-import type { WhisperResponse, WhisperSegment, WhisperWord } from './types'
+import { convertSegmentsToSRT, toOriginalTimeline, transformSegments } from './srt'
+import type { WhisperResponse, WhisperSegment } from './types'
 
 const MAX_UPLOAD_MB = 24 // Keep under ~25MB Whisper API limit (with headroom)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 const AUTO_CHUNK_MINUTES = 20
 const MAX_PARALLEL_CHUNK_TRANSCRIPTIONS = 8
-
-function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-  const millis = Math.floor((seconds % 1) * 1000)
-  
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`
-}
-
-function convertSegmentsToSRT(segments: Array<Pick<WhisperSegment, 'start' | 'end' | 'text'>>): string {
-  let srt = ''
-  
-  segments.forEach((segment, index) => {
-    srt += `${index + 1}\n`
-    srt += `${formatTime(segment.start)} --> ${formatTime(segment.end)}\n`
-    srt += `${segment.text.trim()}\n\n`
-  })
-  
-  return srt
-}
-
-function transformSegments(
-  segments: WhisperSegment[],
-  transform: (seconds: number) => number
-): WhisperSegment[] {
-  return segments.map((segment) => ({
-    ...segment,
-    start: transform(segment.start),
-    end: transform(segment.end),
-    words: segment.words?.map((word: WhisperWord) => ({
-      ...word,
-      start: transform(word.start),
-      end: transform(word.end),
-    })),
-  }))
-}
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -400,11 +364,14 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
 
       mergedText += chunkTranscription.text + '\n'
 
-      const transformed = transformSegments(chunkTranscription.segments, (t) => {
-        // chunk audio timestamps are in optimized time; map to global original timeline:
-        // (localChunkTime + chunkOffsetOptimized) * speedFactor + userOffsetSeconds
-        return (t + offsetOptimizedSeconds) * speedFactor + offsetSeconds
-      })
+      const transformed = transformSegments(
+        chunkTranscription.segments,
+        toOriginalTimeline({
+          chunkOffsetSeconds: offsetOptimizedSeconds,
+          speedFactor,
+          offsetSeconds,
+        })
+      )
 
       mergedSegments.push(...transformed)
     }

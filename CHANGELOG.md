@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **macOS Finder Quick Action**: Added `--install-mac-action` flag to install a native macOS right-click Finder Quick Action ("Transcribe Subtitles") with system notifications.
+- **Unit Tests**: Added a `bun test` suite covering URL vs path detection, input routing, media discovery, offset parsing, and SRT timeline math.
 
 ### Fixed
-- **URL vs Path Disambiguation**: Fixed URL validation logic in remote providers so local file paths are never falsely identified as remote URLs.
+- **URL vs Path Disambiguation**: Fixed URL validation logic in remote providers so local file paths are never falsely identified as remote URLs. Local paths that exist on disk now always take priority over remote download.
+- **SRT Millisecond Rounding**: Fixed floating point truncation that could shift a cue by 1ms (e.g. `3661.234s` rendered as `01:01:01,233`).
+- **Negative Timestamps**: A negative `--offset` no longer produces malformed SRT timestamps; cues clamp to `00:00:00,000`.
 
 ## [3.7.0] - 2026-07-29
 

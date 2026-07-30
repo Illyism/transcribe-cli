@@ -11,7 +11,9 @@
   "scripts": {
     "build": "bun build src/cli.ts --outdir dist --target node --format esm --external openai --external @clack/prompts && bun build src/index.ts --outdir dist --target node --format esm --external openai && chmod +x dist/cli.js",
     "dev": "bun src/cli.ts",
-    "prepublishOnly": "bun run build"
+    "test": "bun test src",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
   },
   "keywords": [
     "transcribe",
@@ -53,6 +55,7 @@
     "LICENSE"
   ],
   "devDependencies": {
+    "@types/bun": "^1.3.14",
     "@types/cli-progress": "^3.11.6"
   },
   "publishConfig": {

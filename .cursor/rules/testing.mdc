@@ -1,8 +1,26 @@
 ---
-description: A/B testing framework for optimization strategies
+description: Unit tests and the A/B testing framework for optimization strategies
 ---
 
-# Testing Framework
+# Unit Tests
+
+Run with `bun test` (scoped to `src/`, so the A/B suite below never runs by accident).
+
+Tests live next to the code as `src/**/*.test.ts`:
+
+- [src/remote/urls.test.ts](mdc:src/remote/urls.test.ts) — URL vs local path detection, provider routing, slugs
+- [src/input.test.ts](mdc:src/input.test.ts) — input classification, media discovery, `--offset` parsing
+- [src/srt.test.ts](mdc:src/srt.test.ts) — SRT formatting and the chunk/speed/offset timeline math
+
+Only pure logic is unit tested. Anything that shells out to ffmpeg/yt-dlp or calls
+the Whisper API belongs in the A/B suite instead. Keep new logic out of
+[src/cli.ts](mdc:src/cli.ts): it runs `main()` on import, so it cannot be imported by a test.
+Put testable helpers in [src/input.ts](mdc:src/input.ts) or [src/srt.ts](mdc:src/srt.ts).
+
+Tests must not depend on machine state. Build fixtures with `mkdtempSync` in a
+`beforeAll` and remove them in `afterAll`.
+
+# A/B Testing Framework
 
 ## Test Structure
 
