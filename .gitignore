@@ -6,3 +6,5 @@ dist/
 .env.*
 *.tgz
 .npm/
+ref/**/target/
+ref/**/native/pixel.node

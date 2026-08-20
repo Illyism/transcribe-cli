@@ -1,5 +1,6 @@
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { parseDownloadPercent, phasePercent } from '../progress'
 import { createCookieAuthError, resolveCookiesFromBrowser } from './cookies'
 import { DownloadProgress } from './progress'
 import { resolveProvider } from './providers'
@@ -27,6 +28,8 @@ export {
 export interface DownloadRemoteAudioOptions {
   /** Browser name for yt-dlp --cookies-from-browser (chrome, safari, firefox, ...) */
   cookiesFromBrowser?: string
+  quiet?: boolean
+  onProgress?: (event: { percent: number; message: string; bytes?: number }) => void
 }
 
 export async function downloadRemoteAudio(
@@ -42,7 +45,14 @@ export async function downloadRemoteAudio(
   const mediaSlug = getRemoteMediaSlug(normalizedUrl)
 
   const emoji = provider.id === 'instagram' ? '📸' : '🎥'
-  console.log(`${emoji} Downloading ${provider.label} audio...`)
+  const startMessage = `${emoji} Downloading ${provider.label} audio...`
+  if (!options.quiet) {
+    console.log(startMessage)
+  }
+  options.onProgress?.({
+    percent: phasePercent('downloading'),
+    message: startMessage,
+  })
 
   const { cookieArgs, probe } = await resolveCookiesFromBrowser(
     normalizedUrl,
@@ -52,20 +62,31 @@ export async function downloadRemoteAudio(
 
   const totalBytes = probe ? filesizeFromProbeInfo(probe.info) : null
   const outputPath = join(tmpdir(), `${mediaSlug}_${Date.now()}.mp3`)
-  const progress = new DownloadProgress(totalBytes)
+  const progress = options.quiet ? null : new DownloadProgress(totalBytes)
+
+  const reportLine = (line: string) => {
+    progress?.handleLine(line)
+    const pct = parseDownloadPercent(line)
+    if (pct != null) {
+      options.onProgress?.({
+        percent: phasePercent('downloading', { done: pct, total: 100 }),
+        message: `Downloading ${provider.label} ${pct.toFixed(0)}%`,
+      })
+    }
+  }
 
   const { code, output } = await extractAudio(
     normalizedUrl,
     outputPath,
     cookieArgs,
     {
-      onStdoutLine: (line) => progress.handleLine(line),
-      onStderrLine: (line) => progress.handleLine(line),
+      onStdoutLine: reportLine,
+      onStderrLine: reportLine,
     }
   )
 
   const success = code === 0
-  progress.finish(success)
+  progress?.finish(success)
 
   if (success) {
     return outputPath

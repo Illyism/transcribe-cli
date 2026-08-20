@@ -6,7 +6,11 @@ const SPEED_FACTOR = 1.2
 const MAX_FILE_SIZE_MB = 24 // Keep under 25MB API limit
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
-export async function optimizeAudio(inputPath: string): Promise<{ path: string; speedFactor: number }> {
+export async function optimizeAudio(
+  inputPath: string,
+  options: { silent?: boolean } = {}
+): Promise<{ path: string; speedFactor: number }> {
+  const log = options.silent ? () => {} : (msg: string) => console.log(msg);
   const fileSize = statSync(inputPath).size
   const fileSizeMB = fileSize / 1024 / 1024
 
@@ -30,7 +34,7 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
         const optimizedSize = statSync(speedOptimizedPath).size
         const optimizedSizeMB = optimizedSize / 1024 / 1024
         const reduction = ((1 - optimizedSize / fileSize) * 100).toFixed(1)
-        console.log(`⚡ Speed optimization (1.2x): ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
+        log(`⚡ Speed optimization (1.2x): ${fileSizeMB.toFixed(2)} MB → ${optimizedSizeMB.toFixed(2)} MB (${reduction}% reduction)`)
         resolve()
       } else {
         reject(new Error(`FFmpeg optimization failed with code ${code}`))
@@ -67,7 +71,7 @@ export async function optimizeAudio(inputPath: string): Promise<{ path: string; 
         if (code === 0) {
           const finalSize = statSync(finalPath).size
           const finalSizeMB = finalSize / 1024 / 1024
-          console.log(`🗜️ Compressed for 24MB limit: ${speedOptimizedSizeMB.toFixed(2)} MB → ${finalSizeMB.toFixed(2)} MB (${safeBitrate}k Opus)`)
+          log(`🗜️ Compressed for 24MB limit: ${speedOptimizedSizeMB.toFixed(2)} MB → ${finalSizeMB.toFixed(2)} MB (${safeBitrate}k Opus)`)
           resolve()
         } else {
           reject(new Error(`FFmpeg compression failed with code ${code}`))
