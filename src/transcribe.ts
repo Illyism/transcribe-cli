@@ -4,6 +4,8 @@ import { writeFile } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import type { TranscribeOptions, TranscribeResult } from './index'
 import { optimizeAudio } from './optimize'
+import type { CaptionCue, ChunkStatus, TranscribeProgress } from './progress'
+import { phasePercent } from './progress'
 import { convertSegmentsToSRT, toOriginalTimeline, transformSegments } from './srt'
 import type { WhisperResponse, WhisperSegment } from './types'
 
@@ -260,8 +262,23 @@ async function transcribeWithWhisper(audioPath: string, apiKey: string): Promise
  * console.log('Duration:', result.duration)
  * ```
  */
+function cuesFromSegments(segments: WhisperSegment[]): CaptionCue[] {
+  return segments.map((segment) => ({
+    start: segment.start,
+    end: segment.end,
+    text: segment.text.trim(),
+  }))
+}
+
 export async function transcribe(options: TranscribeOptions): Promise<TranscribeResult> {
-  const { inputPath, apiKey, outputPath, optimize = true, offsetSeconds = 0, chunkMinutes } = options
+  const { inputPath, apiKey, outputPath, optimize = true, offsetSeconds = 0, chunkMinutes, quiet } = options
+
+  const emit = (event: TranscribeProgress) => {
+    options.onProgress?.(event)
+    if (!quiet) {
+      console.log(event.message)
+    }
+  }
   
   if (!existsSync(inputPath)) {
     throw new Error(`File not found: ${inputPath}`)
@@ -286,7 +303,11 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   
   // Extract audio if it's a video file
   if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
-    console.log('🎬 Extracting audio from video...')
+    emit({
+      phase: 'extracting',
+      message: '🎬 Extracting audio from video...',
+      percent: phasePercent('extracting'),
+    })
     const dir = dirname(inputPath)
     const baseName = basename(inputPath, extname(inputPath))
     tempAudioPath = join(dir, `${baseName}_temp.mp3`)
@@ -301,7 +322,13 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     // Optimization (1.2x speedup) is only applied to media 5 minutes (300 seconds) or longer
     const MIN_OPTIMIZE_DURATION_SECONDS = 300
     if (optimize && initialDuration >= MIN_OPTIMIZE_DURATION_SECONDS) {
-      const optimized = await optimizeAudio(audioPath)
+      emit({
+        phase: 'optimizing',
+        message: '⚡ Speeding audio 1.2x for a smaller Whisper upload...',
+        percent: phasePercent('optimizing'),
+        duration: initialDuration,
+      })
+      const optimized = await optimizeAudio(audioPath, { silent: quiet })
       if (optimized.path !== audioPath) {
         optimizedPath = optimized.path
         audioPath = optimized.path
@@ -312,11 +339,10 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     const durationOptimized = speedFactor === 1.0 ? initialDuration : await getMediaDurationSeconds(audioPath)
     const durationOriginal = durationOptimized * speedFactor
 
-    if (offsetSeconds !== 0) {
+    if (offsetSeconds !== 0 && !quiet) {
       console.log(`🕒 Applying timestamp offset: ${offsetSeconds}s`)
     }
 
-    let mergedSegments: WhisperSegment[] = []
     let mergedText = ''
     let language = 'unknown'
     let originalDurationSeconds = durationOriginal
@@ -325,11 +351,23 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
     const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
 
+    options.onProgress?.({
+      phase: 'chunking',
+      message: `🧩 Splitting into ~${chunkMinutesToUse} min chunks...`,
+      percent: phasePercent('chunking'),
+      duration: durationOriginal,
+    })
     chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
 
     if (chunkPaths.length > 1) {
-      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
-      console.log(`✅ Created ${chunkPaths.length} chunks`)
+      emit({
+        phase: 'chunking',
+        message: `🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`,
+        percent: phasePercent('chunking'),
+        chunkTotal: chunkPaths.length,
+        chunks: chunkPaths.map(() => 'pending'),
+        duration: durationOriginal,
+      })
     }
 
     const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
@@ -341,45 +379,89 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     })
 
     const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
+    const chunkStatus: ChunkStatus[] = chunkPaths.map(() => 'pending')
+    const partialSegments: WhisperSegment[][] = chunkPaths.map(() => [])
+    let doneChunks = 0
+
+    const emitTranscribing = (message: string, chunkIndex?: number) => {
+      const merged = partialSegments.flat().sort((a, b) => a.start - b.start)
+      emit({
+        phase: 'transcribing',
+        message,
+        percent: phasePercent('transcribing', { done: doneChunks, total: chunkPaths.length }),
+        chunkIndex,
+        chunkTotal: chunkPaths.length,
+        chunks: [...chunkStatus],
+        language: language === 'unknown' ? undefined : language,
+        duration: durationOriginal,
+        cues: cuesFromSegments(merged),
+      })
+    }
+
     if (chunkPaths.length > 1) {
-      console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
+      emitTranscribing(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
     } else {
-      console.log('🎙️  Transcribing...')
+      emitTranscribing('🎙️  Transcribing...')
     }
 
     const chunkTranscriptions = await mapWithConcurrency(chunkPaths, chunkConcurrency, async (chunkPath, i) => {
+      chunkStatus[i] = 'running'
       if (chunkPaths.length > 1) {
-        console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
+        emitTranscribing(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`, i)
       }
-      return transcribeWithWhisper(chunkPath, apiKey)
+      try {
+        const result = await transcribeWithWhisper(chunkPath, apiKey)
+        const transformed = transformSegments(
+          result.segments,
+          toOriginalTimeline({
+            chunkOffsetSeconds: chunkOffsets[i],
+            speedFactor,
+            offsetSeconds,
+          })
+        )
+        partialSegments[i] = transformed
+        chunkStatus[i] = 'done'
+        doneChunks++
+        if (i === 0) language = result.language
+        emitTranscribing(
+          chunkPaths.length > 1
+            ? `🎙️  Chunk ${i + 1}/${chunkPaths.length} done`
+            : '🎙️  Transcribing...',
+          i
+        )
+        return result
+      } catch (error) {
+        chunkStatus[i] = 'error'
+        emitTranscribing(`🎙️  Chunk ${i + 1} failed`, i)
+        throw error
+      }
     })
 
+    const mergedSegments: WhisperSegment[] = []
     for (let i = 0; i < chunkTranscriptions.length; i++) {
       const chunkTranscription = chunkTranscriptions[i]
-      const offsetOptimizedSeconds = chunkOffsets[i]
-
       if (i === 0) {
         language = chunkTranscription.language
       }
-
       mergedText += chunkTranscription.text + '\n'
-
-      const transformed = transformSegments(
-        chunkTranscription.segments,
-        toOriginalTimeline({
-          chunkOffsetSeconds: offsetOptimizedSeconds,
-          speedFactor,
-          offsetSeconds,
-        })
-      )
-
-      mergedSegments.push(...transformed)
+      mergedSegments.push(...partialSegments[i])
     }
 
     originalDurationSeconds = totalOptimizedSeconds * speedFactor
 
     // Sort segments by start time (important for chunked transcriptions)
     mergedSegments.sort((a, b) => a.start - b.start)
+
+    emit({
+      phase: 'writing',
+      message: '📝 Writing SRT...',
+      percent: phasePercent('writing'),
+      chunkTotal: chunkPaths.length,
+      chunks: [...chunkStatus],
+      language,
+      duration: originalDurationSeconds,
+      cues: cuesFromSegments(mergedSegments),
+    })
 
     // Convert to SRT format
     const srt = convertSegmentsToSRT(mergedSegments)
@@ -389,6 +471,17 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     const srtPath = outputPath || defaultSrtPath
     mkdirSync(dirname(srtPath), { recursive: true })
     await writeFile(srtPath, srt, 'utf-8')
+
+    emit({
+      phase: 'done',
+      message: `✅ SRT saved to ${srtPath}`,
+      percent: 100,
+      chunkTotal: chunkPaths.length,
+      chunks: [...chunkStatus],
+      language,
+      duration: originalDurationSeconds,
+      cues: cuesFromSegments(mergedSegments),
+    })
 
     return {
       srtPath,
