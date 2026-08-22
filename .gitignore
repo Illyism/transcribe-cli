@@ -6,3 +6,13 @@ dist/
 .env.*
 *.tgz
 .npm/
+
+# Audio / eval files (private test assets)
+test/*.m4a
+test/*.mp3
+test/*.wav
+test/*.srt
+test/eval.*.md
+test/eval.*.srt
+test/eval-results.json
+test/output/

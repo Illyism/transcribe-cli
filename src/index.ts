@@ -5,6 +5,11 @@
 
 export interface TranscribeOptions {
   apiKey?: string
+  baseURL?: string
+  model?: string
+  autofix?: boolean | string
+  refineModel?: string
+  diarize?: boolean
   inputPath: string
   outputPath?: string
   optimize?: boolean

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - Unreleased
+
+### Added
+- **Configurable Models & Endpoints**: Added `--model` / `-m` and `--base-url` flags to support OpenAI-compatible endpoints (OpenRouter, Groq, LiteLLM, vLLM, Deepgram) and non-Whisper models (Issue #1).
+- **2-Pass Hybrid Autofix**: Added `--autofix [model]` to fix phonetic mishearings, domain terms, brands, tools, and metrics in-place while strictly preserving Whisper's frame-accurate SRT timecodes. Automatically detects whether you have an `OPENAI_API_KEY` (defaults to `gpt-5.6-luna`) or `OPENROUTER_API_KEY` (defaults to `google/gemini-3.7-flash`), so only **1 token** is required.
+- **Automatic Speaker Diarization**: Diarization is now enabled by default during `--autofix`, identifying and labeling speakers (`[Speaker 1]: ...`, `[Speaker 2]: ...`). Added `--no-diarize` to opt out.
+- **Synthesized Segments from Words**: Automatically reconstructs subtitle segments when non-Whisper verbose JSON responses return `words` with timestamps instead of `segments`.
+
+### Changed
+- **Removed 1.2x Audio Speedup**: Disabled default `atempo=1.2` audio acceleration across all files.
+  - *Why*: Whisper computes a log-mel spectrogram with a 10ms hop size and 2x convolution stride, producing 1 feature vector every 20ms. In normal conversational speech, short vowels (*"applied"*, *"pull"*, *"paid"*) last ~50–70ms (3–4 frames). At 1.2x speedup, they shrink to 25–40ms (1–2 frames), blurring vowel-consonant transitions into adjacent frames and smearing unvoiced stop transients (/p/, /t/, /k/). This caused severe phonetic hallucinations on code-switched technical jargon and fast dialogue (*"тур реквесты"*, *"бейт"*, *"куплю пище"*).
+  - Kept `--raw` flag as an explicit alias for 100% original unoptimized extraction.
+
 ## [3.8.0] - 2026-07-30
 
 ### Added

@@ -37,38 +37,72 @@ import {
 import { installMacQuickAction } from "./mac";
 import { transcribe } from "./transcribe";
 
-function getApiKey(): string {
-  // Try environment variable first
-  let apiKey = process.env.OPENAI_API_KEY;
+interface ResolvedConfig {
+  apiKey: string;
+  baseURL?: string;
+  model?: string;
+}
 
-  if (!apiKey) {
-    // Try reading from config file in home directory
-    try {
-      const configPath = join(homedir(), ".transcribe", "config.json");
-      if (existsSync(configPath)) {
-        const config = require(configPath);
-        apiKey = config.apiKey;
-      }
-    } catch (error) {
-      // Config file doesn't exist or is invalid
+function getConfig(cliModel?: string, cliBaseUrl?: string): ResolvedConfig {
+  let fileConfig: {
+    apiKey?: string;
+    openaiApiKey?: string;
+    openrouterApiKey?: string;
+    baseURL?: string;
+    model?: string;
+  } = {};
+
+  try {
+    const configPath = join(homedir(), ".transcribe", "config.json");
+    if (existsSync(configPath)) {
+      fileConfig = require(configPath);
     }
+  } catch (error) {
+    // Config file doesn't exist or is invalid
   }
+
+  // If both keys exist:
+  // Primary transcription defaults to OpenAI Whisper-1 (via OPENAI_API_KEY)
+  // Autofix / Refinement will automatically use OpenRouter Gemini-3.7-flash (via OPENROUTER_API_KEY)
+  const openaiKey = process.env.OPENAI_API_KEY || fileConfig.openaiApiKey || (fileConfig.apiKey && !fileConfig.apiKey.startsWith('sk-or-') ? fileConfig.apiKey : undefined);
+  const openrouterKey = process.env.OPENROUTER_API_KEY || fileConfig.openrouterApiKey || (fileConfig.apiKey && fileConfig.apiKey.startsWith('sk-or-') ? fileConfig.apiKey : undefined);
+
+  const apiKey = openaiKey || openrouterKey || fileConfig.apiKey;
+
+  const baseURL =
+    cliBaseUrl ||
+    process.env.TRANSCRIBE_BASE_URL ||
+    process.env.OPENAI_BASE_URL ||
+    fileConfig.baseURL ||
+    undefined;
+
+  const model =
+    cliModel ||
+    process.env.TRANSCRIBE_MODEL ||
+    fileConfig.model ||
+    (openaiKey ? "whisper-1" : "google/gemini-3.7-flash");
 
   if (!apiKey) {
     throw new Error(
-      "OPENAI_API_KEY not found.\n\n" +
-        "🔑 Get your API key: https://platform.openai.com/api-keys\n\n" +
+      "API key not found.\n\n" +
+        "🔑 Get your API key:\n" +
+        "   • OpenAI: https://platform.openai.com/api-keys\n" +
+        "   • OpenRouter: https://openrouter.ai/keys\n\n" +
         "Then set it using ONE of these methods:\n\n" +
-        "1️⃣  Environment variable (recommended for one-time use):\n" +
-        "   export OPENAI_API_KEY=sk-...\n\n" +
+        "1️⃣  Environment variable:\n" +
+        "   export OPENAI_API_KEY=sk-...\n" +
+        "   # Or for OpenRouter:\n" +
+        "   export OPENROUTER_API_KEY=sk-or-...\n" +
+        "   export OPENAI_BASE_URL=https://openrouter.ai/api/v1\n\n" +
         "2️⃣  Config file (recommended for permanent setup):\n" +
         "   mkdir -p ~/.transcribe\n" +
         '   echo \'{"apiKey": "sk-..."}\' > ~/.transcribe/config.json\n\n' +
+        "💡 Tip: If you set both OPENAI_API_KEY and OPENROUTER_API_KEY, transcribe automatically mixes them (Whisper-1 for frame-accurate timing + Gemini 3.7 Flash for deep context autofix & diarization)!\n\n" +
         "📚 Full setup guide: https://github.com/Illyism/transcribe-cli#configuration"
     );
   }
 
-  return apiKey;
+  return { apiKey, baseURL, model };
 }
 
 function formatFileSize(bytes: number): string {
@@ -147,6 +181,10 @@ interface CliOptions {
   offsetSeconds?: number;
   chunkMinutes?: number;
   cookiesFromBrowser?: string;
+  model?: string;
+  baseURL?: string;
+  autofix?: boolean | string;
+  diarize?: boolean;
 }
 
 async function transcribeOne(
@@ -206,6 +244,10 @@ async function transcribeOne(
     return await transcribe({
       inputPath,
       apiKey,
+      baseURL: options.baseURL,
+      model: options.model,
+      autofix: options.autofix,
+      diarize: options.diarize,
       optimize: isScreenStudio ? false : !options.useRaw,
       outputPath,
       offsetSeconds: options.offsetSeconds,
@@ -245,19 +287,25 @@ Transcribe - Audio/Video to SRT
 Usage: transcribe <path-to-file-url-or-folder> [options]
 
 Options:
-  -h, --help     Show this help message
-  -v, --version  Show version
-  --raw          Disable optimizations (use original audio)
-  -o, --output   Output .srt path (file) OR output directory (folder)
-  --offset       Shift subtitle timestamps (seconds or HH:MM:SS.mmm)
-  --chunk-minutes  Force chunking into N-minute pieces (helps long movies)
-  --cookies-from-browser  Browser for yt-dlp cookies (chrome, safari, firefox, ...)
+  -h, --help              Show this help message
+  -v, --version           Show version
+  -m, --model <model>     Model name (default: whisper-1, or TRANSCRIBE_MODEL)
+  --base-url <url>        Base URL for OpenAI-compatible API (e.g. OpenRouter, LiteLLM)
+  --autofix [model]       2-Pass LLM cleanup & diarization (auto: gpt-5.6-luna on OpenAI, gemini on OpenRouter)
+  --no-diarize            Disable automatic speaker diarization during autofix
+  --raw                   Disable optimizations (use original audio)
+  -o, --output <path>     Output .srt path (file) OR output directory (folder)
+  --offset <time>         Shift subtitle timestamps (seconds or HH:MM:SS.mmm)
+  --chunk-minutes <min>   Force chunking into N-minute pieces (helps long movies)
+  --cookies-from-browser <bws> Browser for yt-dlp cookies (chrome, safari, firefox, ...)
                           Auto-detected for Instagram when omitted
   --install-mac-action    Install macOS Finder right-click Quick Action
 
 Examples:
   transcribe video.mp4
-  transcribe audio.mp3
+  transcribe audio.mp3 --autofix
+  transcribe audio.mp3 --autofix google/gemini-3.7-flash
+  transcribe podcast.mp3 --autofix --no-diarize
   transcribe /path/to/podcast.wav
   transcribe ./day-9
   transcribe https://www.youtube.com/watch?v=VIDEO_ID
@@ -268,6 +316,8 @@ Examples:
   transcribe movie.mkv --offset 01:00:00.000
   transcribe movie.mkv --output ./subs
   transcribe long_movie.mkv --chunk-minutes 15
+  transcribe audio.mp3 --model whisper-large-v3 --base-url https://api.groq.com/openai/v1
+  transcribe audio.mp3 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1
   transcribe https://www.instagram.com/reel/SHORTCODE/ --cookies-from-browser chrome
 
 Folders:
@@ -291,7 +341,8 @@ Remote URLs: YouTube, Instagram Reels/posts, X/Twitter, and other yt-dlp sites
   • Instagram usually needs a logged-in browser (cookies auto-detected)
 
 Configuration:
-  Set OPENAI_API_KEY environment variable or create ~/.transcribe/config.json
+  Set OPENAI_API_KEY / OPENROUTER_API_KEY environment variable or create ~/.transcribe/config.json
+  Optionally set OPENAI_BASE_URL / TRANSCRIBE_BASE_URL and TRANSCRIBE_MODEL
     `);
     process.exit(0);
   }
@@ -313,12 +364,64 @@ Configuration:
   let offsetSeconds: number | undefined;
   let chunkMinutes: number | undefined;
   let cookiesFromBrowser: string | undefined;
+  let cliModel: string | undefined;
+  let cliBaseUrl: string | undefined;
+  let autofix: boolean | string | undefined;
+  let diarize: boolean | undefined = undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
     if (arg === "--raw") {
       useRaw = true;
+      continue;
+    }
+
+    if (arg === "--diarize") {
+      diarize = true;
+      continue;
+    }
+
+    if (arg === "--no-diarize" || arg === "--noDiarize") {
+      diarize = false;
+      continue;
+    }
+
+    if (arg === "--autofix" || arg === "--refine") {
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) {
+        autofix = next;
+        i++;
+      } else {
+        autofix = true;
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--autofix=")) {
+      autofix = arg.split("=")[1];
+      continue;
+    }
+
+    if (arg === "--model" || arg === "-m") {
+      const raw = args[i + 1];
+      if (!raw || raw.startsWith("-")) {
+        console.error("Error: --model requires a model name (e.g. whisper-1, nova-3, google/gemini-2.5-flash)");
+        process.exit(1);
+      }
+      cliModel = raw;
+      i++;
+      continue;
+    }
+
+    if (arg === "--base-url" || arg === "--baseUrl") {
+      const raw = args[i + 1];
+      if (!raw || raw.startsWith("-")) {
+        console.error("Error: --base-url requires a URL");
+        process.exit(1);
+      }
+      cliBaseUrl = raw;
+      i++;
       continue;
     }
 
@@ -388,16 +491,21 @@ Configuration:
     process.exit(1);
   }
 
+  const { apiKey, baseURL, model } = getConfig(cliModel, cliBaseUrl);
+
   const options: CliOptions = {
     useRaw,
     outputArg,
     offsetSeconds,
     chunkMinutes,
     cookiesFromBrowser,
+    model,
+    baseURL,
+    autofix,
+    diarize,
   };
 
   try {
-    const apiKey = getApiKey();
     const resolvedInput = resolve(input);
 
     // Folder bulk mode (a Screen Studio bundle is a directory, but not a folder of media)

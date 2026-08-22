@@ -34,9 +34,12 @@ What is the input?
 
 Apply flags based on specific requirements:
 
+- **2-Pass AI Autofix & Diarization**: `--autofix` or `--autofix <model>` (e.g. `google/gemini-3.7-flash`). Automatically fixes phonetic mishearings, domain terms, brands, and labels distinct speakers at turns (`[Speaker 1]: ...`).
+- **Disable Diarization in Autofix**: `--no-diarize`
+- **Custom model**: `-m <model>` or `--model <model>` (e.g. `whisper-1`, `whisper-large-v3`, `google/gemini-2.5-flash`, `nova-3`)
+- **Custom base URL**: `--base-url <url>` (e.g. `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`)
 - **Custom output location**: `-o /path/to/output.srt` (for single files) or `-o /path/to/dir/` (for folders)
-- **Force original audio (disable 1.2x speedup)**: `--raw`
-  *Note*: Files under 5 minutes use raw audio automatically. Use `--raw` only when 100% original audio speed is required on files >= 5 minutes.
+- **Force original audio**: `--raw`
 - **Timecode offset**: `--offset 01:00:00.000` or `--offset 3600`
   *Note*: Shifts subtitle start timestamps to align with NLE video editor timelines (e.g. Premiere, Final Cut, Resolve).
 - **Install macOS Finder Quick Action**: `--install-mac-action`
@@ -48,8 +51,8 @@ When an error occurs during execution, walk this recovery tree:
 
 ```
 What is the error message?
-├── "OPENAI_API_KEY not found"
-│   └── Set env var: export OPENAI_API_KEY=sk-... (or create ~/.transcribe/config.json)
+├── "API key not found" / "OPENAI_API_KEY not found"
+│   └── Set env var: export OPENAI_API_KEY=sk-... (or export OPENROUTER_API_KEY=sk-or-...) or create ~/.transcribe/config.json
 ├── "FFmpeg is not installed"
 │   └── Install FFmpeg: brew install ffmpeg (macOS), sudo apt install ffmpeg (Linux)
 ├── "yt-dlp is not installed"

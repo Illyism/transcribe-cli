@@ -19,9 +19,11 @@ export interface WhisperSegment {
 }
 
 export interface WhisperResponse {
-  task: string
-  language: string
-  duration: number
+  task?: string
+  language?: string
+  duration?: number
   text: string
-  segments: WhisperSegment[]
+  segments?: WhisperSegment[]
+  words?: WhisperWord[]
+  [key: string]: any
 }

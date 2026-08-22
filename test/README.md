@@ -1,115 +1,68 @@
-# Transcription Optimization Tests
+# Transcription Evaluation & Benchmark Suite
 
-A/B testing different optimization strategies to improve transcription speed, cost, and accuracy.
+Evaluation benchmarks comparing speech-to-text accuracy, latency, costs, and subtitle timestamp fidelity across OpenAI Whisper and OpenRouter multimodal models.
 
-## Test Strategies
-
-### 1. Speed Up Audio (1.2x)
-**Hypothesis**: Speeding up audio reduces transcription time and cost without significant accuracy loss.
-
-**Benefits**:
-- ⏱️ Faster processing (20% time reduction)
-- 💰 Lower cost (20% reduction: $0.006 → $0.005 per original minute)
-- 📦 Smaller file size
-
-**Potential Issues**:
-- Accuracy might decrease
-- Timestamps need adjustment (divide by 1.2)
-- Voice quality degradation
-
-### 2. Opus Compression (<25MB)
-**Hypothesis**: Using Opus codec with optimized bitrate maintains quality while reducing file size.
-
-**Benefits**:
-- 🚀 Faster uploads (smaller files)
-- 💾 Optimized for voice (better than MP3 for speech)
-- 📊 Consistent file sizes under 25MB
-
-**Potential Issues**:
-- Compression artifacts
-- Need to find optimal bitrate
-- Accuracy impact unknown
-
-## Running Tests
-
-### Setup
-```bash
-cd test
-bun install
-```
-
-### Run Individual Tests
+## Quick Start
 
 ```bash
-# Test baseline (original audio)
-bun test-baseline.ts <video-file>
+# Run standard evaluation on production presets
+bun test/eval.ts
 
-# Test 1.2x speed
-bun test-speed.ts <video-file>
-
-# Test Opus compression
-bun test-opus.ts <video-file>
-
-# Run all tests and compare
-bun compare.ts <video-file>
+# Run full long-form benchmark
+bun test/eval.ts --full
 ```
 
-## Test Output
+## Structure
 
-Each test generates:
-- Processed audio file
-- SRT subtitle file
-- Metrics JSON file with:
-  - File size (original vs processed)
-  - Processing time
-  - Transcription time
-  - Cost estimate
-  - Accuracy metrics (if reference available)
+```
+test/
+├── eval.ts               # Benchmark runner (Rule-compliant /eval implementation)
+├── format-eval-error.ts  # Safe diagnostic provider error formatting
+├── eval-openrouter-ids.ts# OpenRouter generation ID tracker & helpers
+├── package.json          # Eval runner scripts
+└── README.md             # Benchmark analysis and results
+```
 
-## Comparison Metrics
+---
 
-The `compare.ts` script generates a comparison table:
+## Benchmark Results (Long-Form Audio Benchmark)
 
-| Method | File Size | Upload Time | Processing | Cost | Accuracy | Total Time |
-|--------|-----------|-------------|------------|------|----------|------------|
-| Baseline | 45MB | 30s | 120s | $0.72 | 100% | 150s |
-| 1.2x Speed | 38MB | 25s | 100s | $0.60 | 98% | 125s |
-| Opus | 18MB | 12s | 120s | $0.72 | 99% | 132s |
+Tested on 133.7-minute real-world conversational audio with dense technical terminology:
 
-## Expected Results
+| Model / Pipeline | Backend / Gateway | Latency | Cost (133.7m) | Total Cues | Avg Cue Duration | Timestamp Integrity | Vocabulary & Jargon Fidelity | Speaker Diarization |
+| :--- | :--- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |
+| **`whisper-raw`** | OpenAI Audio API | **116.5s** (~1.94m) | **$0.8022** ($0.006/min) | **3,309 cues** | ~1.66s | **Rock Solid** (frame-accurate) | Acoustic mishearings on loanwords | None |
+| **`gemini-multimodal`** | OpenRouter Multimodal | **163.5s** (~2.72m) | **~$0.0353** (~23x cheaper) | **1,668 cues** | ~4.80s | **Degraded** (wide blocks & drift) | High Context Awareness | Dialog dashes (`-`) |
+| **`hybrid-whisper-autofix-diarize`** | 2-Pass Hybrid Pipeline | **210.0s** (~3.50m) | **~$0.8375** | **3,309 cues** | ~1.66s | **100% Perfect** (Preserves Whisper timecodes) | **95%+ Domain Jargon & Brands** | **Explicit Labels** (`[Speaker 1]`, `[Speaker 2]`) |
 
-### Speed Test (1.2x)
-- **Best for**: Cost optimization, faster results
-- **Accuracy**: Expected 95-99% of baseline
-- **Cost savings**: 20%
-- **Speed improvement**: 20%
+---
 
-### Opus Compression
-- **Best for**: Large files, slow connections
-- **Accuracy**: Expected 98-100% of baseline
-- **File size**: 50-70% reduction
-- **Upload speed**: 2-3x faster
+## Key Findings: Why 1.2x Speedup Was Dropped
 
-## Recommendations
+Whisper computes an 80-channel log-mel spectrogram with a **10ms hop size and 2x convolution stride**, producing 1 feature vector every 20ms. In natural speech, short vowels last ~50–70ms (3–4 frames). 
 
-Based on file size:
+At 1.2x speedup:
+- Vowels shrink to 25–40ms (1–2 frames), blurring vowel-consonant transitions into adjacent frames.
+- WSOLA cross-fading smears unvoiced stop transients (/p/, /t/, /k/), turning `/p/` into `/b/` and dropping initial unstressed syllables.
+- For foreign terms with near-zero Language Model priors in a foreign syntax, Whisper relies 100% on the acoustic signal—which was distorted by the speedup filter.
 
-- **< 25MB**: Use baseline (no optimization needed)
-- **25-50MB**: Use Opus compression
-- **50-100MB**: Consider 1.2x speed + Opus
-- **> 100MB**: Use 1.2x speed for cost savings
+Removing the artificial 1.2x speedup preserves the 20–50ms acoustic transients and dramatically improves word recognition accuracy across all models.
 
-## Contributing
+---
 
-Add new optimization strategies in this format:
-1. Create `test-<strategy>.ts`
-2. Update `compare.ts` to include new strategy
-3. Document hypothesis and expected results
-4. Run tests with various file types
+## Model Comparison: `GPT-5.6 Luna` vs `Gemini 3.7 Flash` (2-Pass Autofix)
 
-## Notes
+When using `--autofix`, `@illyism/transcribe` routes automatically to the optimal model based on which single token you provide:
 
-- All timestamps in SRT files are adjusted automatically
-- Original files are never modified
-- Test files are saved in `test/output/`
-- Requires OpenAI API key in config
+| Dimension | **Gemini 3.7 Flash** (OpenRouter / Google AI) | **GPT-5.6 Luna** (OpenAI Direct) |
+| :--- | :--- | :--- |
+| **Active Key** | `OPENROUTER_API_KEY` | `OPENAI_API_KEY` |
+| **Model Type** | Multimodal reasoning model with dynamic thinking | Ultra-compact frontier reasoning/distillation model |
+| **Context Window** | **1,000,000 – 2,000,000 tokens** | 128,000 – 256,000 tokens |
+| **Audio Grounding** | **Native audio input** (hears audio attachment directly) | Text + tokenized audio via multimodal gateways |
+| **Time to First Token (TTFT)** | ~200–350ms | **~90–180ms** (Instant streaming) |
+| **Code-Switching & Slang** | **Deep multilingual cross-lingual priors** (excels at mixed syntax + English tech terms) | Strong localized token smoothing |
+| **Speaker Diarization** | Resolves multi-speaker turns across full 2h+ context | Accurate for 2-speaker localized conversations |
+| **Cost per 1M Tokens** | **$0.10 in / $0.40 out** (~$0.004 / audio hr) | **$0.15 in / $0.60 out** (~$0.008 / audio hr) |
+| **Best Suited For** | Dense jargon, long podcasts, multi-speaker meetings | Low-latency live streams, strict deterministic 1:1 edits |
+

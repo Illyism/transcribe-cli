@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   convertSegmentsToSRT,
   formatTime,
+  synthesizeSegmentsFromWords,
   toOriginalTimeline,
   transformSegments,
 } from "./srt";
@@ -79,6 +80,64 @@ describe("convertSegmentsToSRT", () => {
       { start: 0, end: 1, text: "line one\nline two" },
     ]);
     expect(srt).toContain("line one\nline two\n\n");
+  });
+});
+
+describe("synthesizeSegmentsFromWords", () => {
+  test("returns empty array for empty or missing words", () => {
+    expect(synthesizeSegmentsFromWords([])).toEqual([]);
+    expect(synthesizeSegmentsFromWords(undefined as any)).toEqual([]);
+  });
+
+  test("groups words ending with terminal punctuation", () => {
+    const words = [
+      { word: "Hello", start: 0, end: 0.5 },
+      { word: "world.", start: 0.5, end: 1.0 },
+      { word: "How", start: 1.2, end: 1.5 },
+      { word: "are", start: 1.5, end: 1.7 },
+      { word: "you?", start: 1.7, end: 2.1 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words);
+    expect(segments.length).toBe(2);
+    expect(segments[0].text).toBe("Hello world.");
+    expect(segments[0].start).toBe(0);
+    expect(segments[0].end).toBe(1.0);
+    expect(segments[1].text).toBe("How are you?");
+    expect(segments[1].start).toBe(1.2);
+    expect(segments[1].end).toBe(2.1);
+  });
+
+  test("splits words on large silence gaps", () => {
+    const words = [
+      { word: "First", start: 0, end: 0.5 },
+      { word: "phrase", start: 0.5, end: 1.0 },
+      { word: "second", start: 3.5, end: 4.0 }, // gap of 2.5s > 1.2s default
+      { word: "phrase", start: 4.0, end: 4.5 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words);
+    expect(segments.length).toBe(2);
+    expect(segments[0].text).toBe("First phrase");
+    expect(segments[0].start).toBe(0);
+    expect(segments[0].end).toBe(1.0);
+    expect(segments[1].text).toBe("second phrase");
+    expect(segments[1].start).toBe(3.5);
+    expect(segments[1].end).toBe(4.5);
+  });
+
+  test("splits words exceeding max duration", () => {
+    const words = [
+      { word: "One", start: 0, end: 2.0 },
+      { word: "Two", start: 2.0, end: 4.0 },
+      { word: "Three", start: 4.0, end: 7.0 }, // total > 6s
+      { word: "Four", start: 7.0, end: 8.0 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words, { maxDurationSeconds: 5.0 });
+    expect(segments.length).toBe(2);
+    expect(segments[0].text).toBe("One Two Three");
+    expect(segments[1].text).toBe("Four");
   });
 });
 

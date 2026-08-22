@@ -65,15 +65,14 @@ This tool:
 ## Features
 
 - 🎬 **Video & Audio Support**: Works with MP4, MP3, WAV, M4A, WebM, OGG, MOV, AVI, and MKV
-- 🎥 **YouTube Support**: Download and transcribe YouTube videos directly
-- 🎯 **High Accuracy**: Powered by OpenAI's Whisper API
-- ⚡ **Smart Optimization**: Automatic 1.2x speed processing + mono/16kHz extraction (optimized for dialogue)
-- 📝 **SRT Format**: Generates standard SRT subtitle files with precise timestamps
-- 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes), transcribed with up to 8 parallel requests
+- 🎥 **YouTube & Social Video**: Download and transcribe YouTube, Instagram Reels, and X/Twitter videos directly
+- 🎯 **High Accuracy**: Powered by OpenAI's Whisper API + optional 2-Pass AI Autofix (`--autofix`)
+- 👥 **Speaker Diarization**: Automatically labels speaker turns (`[Speaker 1]: ...`, `[Speaker 2]: ...`)
+- 📝 **SRT Format**: Generates standard SRT subtitle files with frame-accurate timestamps
+- 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes), transcribed in parallel
 - 🎬 **Editor-Friendly**: Timecode offset, custom output paths, chunk size control
+- 🌐 **OpenAI-Compatible Gateways**: Connect to OpenRouter, LiteLLM, Groq, or self-hosted models
 - 🔧 **Simple Setup**: Easy configuration via environment variable or config file
-- 🌍 **Multi-language**: Automatically detects language
-- 🚀 **Lightning Fast**: Optimized for 2-4GB+ video files
 
 ## Installation & Setup
 
@@ -216,19 +215,54 @@ pip install yt-dlp
 mkdir -p ~/.transcribe && echo '{"apiKey": "sk-YOUR_KEY"}' > ~/.transcribe/config.json
 ```
 
-### Method 2: Environment Variable  
+**Dual-Key Supercharging (Auto-Mixing):**
+If you have both keys, you can add them to `~/.transcribe/config.json`:
+```json
+{
+  "openaiApiKey": "sk-...",
+  "openrouterApiKey": "sk-or-..."
+}
+```
+`@illyism/transcribe` will automatically route Pass 1 through **Whisper-1** (for frame-accurate timestamps) and Pass 2 through **Gemini 3.7 Flash** (for deep context jargon fixing and multi-speaker diarization)!
+
+### Method 2: Environment Variables
 
 ```bash
+# Standard OpenAI
 export OPENAI_API_KEY=sk-YOUR_KEY
+
+# Or use OpenRouter / OpenAI-compatible gateways (LiteLLM, vLLM, Deepgram)
+export OPENROUTER_API_KEY=sk-or-YOUR_KEY
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+export TRANSCRIBE_MODEL=google/gemini-2.5-flash
+
+# Or export BOTH for the best hybrid pipeline:
+export OPENAI_API_KEY=sk-YOUR_OPENAI_KEY
+export OPENROUTER_API_KEY=sk-or-YOUR_OPENROUTER_KEY
 ```
 
-**Don't have a key?** [Get one free here](https://platform.openai.com/api-keys) (takes 1 minute)
+**Don't have a key?** [Get an OpenAI key](https://platform.openai.com/api-keys) or [OpenRouter key](https://openrouter.ai/keys).
 
 ## Usage Examples
 
 ```bash
 # Local video file
 transcribe video.mp4
+
+# 2-Pass Hybrid Pipeline: Frame-perfect Whisper timestamps + automatic AI cleanup & speaker diarization
+# Works with your single OPENAI_API_KEY (uses gpt-5.6-luna) or OPENROUTER_API_KEY (uses gemini-3.7-flash)
+transcribe podcast.mp3 --autofix
+
+# Optionally specify a custom model for autofix
+transcribe podcast.mp3 --autofix google/gemini-3.7-flash
+transcribe podcast.mp3 --autofix gpt-5.6-luna
+
+# Disable automatic speaker labels
+transcribe podcast.mp3 --autofix --no-diarize
+
+# Custom model and endpoint (e.g. OpenRouter, LiteLLM, Groq)
+transcribe video.mp4 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1
+transcribe video.mp4 --model whisper-large-v3 --base-url https://api.groq.com/openai/v1
 
 # YouTube video
 transcribe https://www.youtube.com/watch?v=VIDEO_ID
@@ -267,25 +301,27 @@ transcribe long_movie.mkv --chunk-minutes 15
 
 ### What Happens Automatically
 
-By default, the tool optimizes large files:
+By default, the tool optimizes large video and audio files:
 
 ```
-2.7GB video → Extract audio (mono, 16kHz) → Speed up 1.2x → Chunk if >45min → Transcribe chunks in parallel → Merge & adjust timestamps
+2.7GB video → Extract speech audio (mono, 16kHz) → Auto-chunk if >45min → Transcribe chunks in parallel → Merge & adjust timestamps
 ```
 
-**For long movies (45+ minutes):**
+**For long media (45+ minutes):**
 - Automatically splits into ~20-minute chunks
 - Transcribes chunks in parallel with up to 8 concurrent requests
-- Merges results with correct timestamps
+- Merges results with frame-accurate timestamps
 - Handles 2+ hour movies reliably
 
-**Result:** 
-- ⚡ 99.5% smaller uploads (2.7GB → 12.8MB)
-- 🚀 10-100x faster than uploading full video  
-- 🎯 ~98% accuracy maintained
-- 💰 Same cost ($0.006/min)
+**2-Pass Hybrid Pipeline (`--autofix`):**
+- **Pass 1**: Whisper-1 generates frame-accurate subtitle timing anchors.
+- **Pass 2**: Multimodal AI (Gemini Flash) fixes domain jargon, acronyms, and names, and adds speaker labels (`[Speaker 1]`, `[Speaker 2]`).
 
-**Want original audio?** Add `--raw` flag.
+**Result:** 
+- ⚡ 99.5% smaller uploads (2.7GB → ~20MB audio)
+- 🚀 10-100x faster than uploading full video  
+- 🎯 Frame-accurate timecode synchronization
+- 💰 Low cost ($0.006/min)
 
 ### Use as a Library
 
@@ -312,9 +348,13 @@ console.log(result.text)     // Full transcription text
 ```typescript
 interface TranscribeOptions {
   inputPath: string        // Path to video/audio file
-  apiKey?: string         // OpenAI API key (or use env var)
+  apiKey?: string         // OpenAI / OpenRouter API key (or use env var)
+  baseURL?: string        // Custom base URL for OpenAI-compatible endpoints
+  model?: string          // Model name (default: "whisper-1")
   outputPath?: string     // Custom output path (optional)
   optimize?: boolean      // Enable optimization (default: true)
+  offsetSeconds?: number  // Shift timestamps by N seconds
+  chunkMinutes?: number   // Chunk size in minutes (default: 20)
 }
 
 interface TranscribeResult {
@@ -353,14 +393,13 @@ Examples:
 <details>
 <summary><b>⚙️ How It Works</b></summary>
 
-1. Extract audio from video (mono, 16kHz - optimized for speech)
-2. Optimize: 1.2x speed + compression if >24MB
-3. Auto-chunk if >45 minutes (for reliability)
-4. Upload chunks to Whisper API (or single file)
-5. Generate SRT with timestamps
-6. Merge chunks (if needed) and adjust timestamps to match original
-7. Apply timecode offset (if specified)
-8. Clean up temp files
+1. Extract audio from video (mono, 16kHz - speech optimized)
+2. Auto-chunk if >45 minutes (for parallel processing and reliability)
+3. Upload chunks to Whisper API (or OpenAI-compatible gateway)
+4. Generate SRT subtitles with frame-accurate timestamps
+5. Optional 2-pass AI Autofix (`--autofix`): Corrects domain jargon & adds speaker diarization
+6. Merge chunks and apply timecode offsets (if specified)
+7. Clean up temporary files
 </details>
 
 <details>

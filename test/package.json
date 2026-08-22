@@ -1,29 +1,20 @@
 {
-  "name": "@illyism/transcribe-tests",
+  "name": "@illyism/transcribe-evals",
   "version": "1.0.0",
-  "description": "A/B testing suite for transcription optimization strategies",
+  "description": "Evaluation benchmarks comparing transcription models across OpenAI and OpenRouter",
   "type": "module",
   "scripts": {
-    "test": "bun compare.ts",
-    "baseline": "bun test-baseline.ts",
-    "speed": "bun test-speed.ts",
-    "opus": "bun test-opus.ts",
-    "compare": "bun compare.ts"
+    "eval": "bun eval.ts",
+    "eval:matrix": "bun eval.ts --matrix",
+    "test": "bun eval.ts"
   },
   "keywords": [
     "transcription",
-    "optimization",
-    "ab-testing",
+    "benchmark",
+    "eval",
     "whisper",
-    "audio",
-    "compression"
+    "gemini"
   ],
   "author": "Ilias Ismanalijev",
-  "license": "MIT",
-  "dependencies": {
-    "@illyism/transcribe": "^2.0.0"
-  },
-  "peerDependencies": {
-    "ffmpeg": "*"
-  }
+  "license": "MIT"
 }
