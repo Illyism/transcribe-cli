@@ -1,15 +1,18 @@
 import { spawn } from 'child_process'
+import type { ChatCompletionContentPart } from 'openai/resources/chat/completions'
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs'
-import { writeFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
+import { describeSettings, isChatModel, resolveSettings, type Route } from './config'
 import type { TranscribeOptions, TranscribeResult } from './index'
-import { optimizeAudio } from './optimize'
 import {
+  applyRefinedCueTexts,
   convertSegmentsToSRT,
   parseSRT,
   synthesizeSegmentsFromWords,
   toOriginalTimeline,
   transformSegments,
+  wordsFromTranscription,
 } from './srt'
 import type { WhisperResponse, WhisperSegment } from './types'
 
@@ -17,6 +20,71 @@ const MAX_UPLOAD_MB = 24 // Keep under ~25MB Whisper API limit (with headroom)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 const AUTO_CHUNK_MINUTES = 20
 const MAX_PARALLEL_CHUNK_TRANSCRIPTIONS = 8
+const AUTOFIX_CUE_BATCH_SIZE = 40
+const MAX_PARALLEL_AUTOFIX_BATCHES = 4
+const AUTOFIX_AUDIO_PADDING_SECONDS = 1
+
+const AUDIO_MIME_TYPES: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  mp4: 'audio/mp4',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  webm: 'audio/webm',
+  flac: 'audio/flac',
+}
+
+function audioMimeType(audioPath: string): string {
+  const ext = audioPath.toLowerCase().split('.').pop()
+  return (ext && AUDIO_MIME_TYPES[ext]) || 'application/octet-stream'
+}
+
+function toAudioDataUri(mimeType: string, buffer: Buffer): string {
+  return `data:${mimeType};base64,${buffer.toString('base64')}`
+}
+
+/** Cut [startSeconds, endSeconds] out of an audio file as a small mono MP3, in memory. */
+async function sliceAudio(audioPath: string, startSeconds: number, endSeconds: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const ffmpeg = spawn('ffmpeg', [
+      '-v', 'error',
+      '-ss', String(Math.max(0, startSeconds)),
+      '-t', String(endSeconds - Math.max(0, startSeconds)),
+      '-i', audioPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-acodec', 'libmp3lame',
+      '-q:a', '5',
+      '-f', 'mp3',
+      'pipe:1',
+    ])
+
+    ffmpeg.stdout.on('data', (data) => chunks.push(data))
+    ffmpeg.on('error', reject)
+    ffmpeg.on('close', (code) => {
+      if (code === 0 && chunks.length > 0) resolve(Buffer.concat(chunks))
+      else reject(new Error(`FFmpeg slice exited with code ${code}`))
+    })
+  })
+}
+
+async function createClient(route: Route) {
+  const { default: OpenAI } = await import('openai')
+  return new OpenAI({
+    apiKey: route.apiKey,
+    ...(route.baseURL ? { baseURL: route.baseURL } : {}),
+  })
+}
+
+/** Models sometimes wrap SRT output in a markdown code fence */
+function stripCodeFence(content: string): string {
+  return content
+    .replace(/^```(?:srt)?\n?/i, '')
+    .replace(/\n?```$/i, '')
+    .trim()
+}
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -214,178 +282,90 @@ async function splitAudioIntoChunks(inputPath: string, chunkSeconds: number): Pr
 async function refineSegmentsWithLLM(
   audioPath: string,
   rawSegments: WhisperSegment[],
-  apiKey: string,
-  options?: { baseURL?: string; autofixModel?: string; diarize?: boolean }
+  route: Route,
+  diarize?: boolean
 ): Promise<WhisperSegment[]> {
   if (!rawSegments || rawSegments.length === 0) return rawSegments
 
-  const { default: OpenAI } = await import('openai')
-  const openrouterKey = process.env.OPENROUTER_API_KEY || (apiKey && apiKey.startsWith('sk-or-') ? apiKey : undefined)
-  const openaiKey = process.env.OPENAI_API_KEY || (apiKey && !apiKey.startsWith('sk-or-') ? apiKey : undefined)
-
-  // When both keys are available or openrouterKey exists, prefer Gemini 3.7 Flash for deep context & multimodal proofreading
-  let fixModel = options?.autofixModel
-  if (!fixModel) {
-    if (openrouterKey) {
-      fixModel = 'google/gemini-3.7-flash'
-    } else {
-      fixModel = 'gpt-5.6-luna'
-    }
-  }
-
-  const isFixOpenRouter = fixModel.includes('/') || fixModel.startsWith('google/')
-  let baseURL = options?.baseURL
-  if (!baseURL && isFixOpenRouter) {
-    baseURL = 'https://openrouter.ai/api/v1'
-  }
-
-  // Pick the appropriate key
-  let effectiveApiKey = apiKey
-  if (isFixOpenRouter && openrouterKey) {
-    effectiveApiKey = openrouterKey
-  } else if (!isFixOpenRouter && openaiKey) {
-    effectiveApiKey = openaiKey
-  }
-
-  const openai = new OpenAI({
-    apiKey: effectiveApiKey,
-    ...(baseURL ? { baseURL } : {}),
-  })
-
-  // Check file size: if under 15MB, attach base64 audio directly for audio context
-  // If larger (or text-only), LLM contextual correction runs on SRT text
-  let audioDataUri: string | undefined
-  try {
-    const { statSync } = await import('fs')
-    if (statSync(audioPath).size < 15 * 1024 * 1024) {
-      const fs = await import('fs/promises')
-      const { basename } = await import('path')
-      const fileBuffer = await fs.readFile(audioPath)
-      const fileName = basename(audioPath)
-      const ext = fileName.toLowerCase().split('.').pop()
-      const mimeTypes: Record<string, string> = {
-        mp3: 'audio/mpeg',
-        mp4: 'audio/mp4',
-        m4a: 'audio/mp4',
-        wav: 'audio/wav',
-        ogg: 'audio/ogg',
-        webm: 'audio/webm',
-        flac: 'audio/flac',
-      }
-      const mimeType = (ext && mimeTypes[ext]) || 'application/octet-stream'
-      const base64Audio = fileBuffer.toString('base64')
-      audioDataUri = `data:${mimeType};base64,${base64Audio}`
-    }
-  } catch {}
-
-  const inputSrt = convertSegmentsToSRT(rawSegments)
+  const openai = await createClient(route)
 
   const diarizationInstructions =
-    options?.diarize === false
+    diarize === false
       ? ''
       : '- If multiple speakers are detected in the conversation, naturally label each speaker at speaker turns (e.g. [Speaker 1]: ..., [Speaker 2]: ... or by name if clearly addressed).\n'
 
-  const prompt = `You are an expert audio transcription proofreader, domain terminology specialist, and speaker diarization assistant.
+  const batches: WhisperSegment[][] = []
+  for (let i = 0; i < rawSegments.length; i += AUTOFIX_CUE_BATCH_SIZE) {
+    batches.push(rawSegments.slice(i, i + AUTOFIX_CUE_BATCH_SIZE))
+  }
+
+  console.log(
+    batches.length > 1
+      ? `✨ Autofix pass (${route.model}, ${rawSegments.length} cues in ${batches.length} batches)...`
+      : `✨ Autofix pass (${route.model})...`
+  )
+
+  // Each batch is independent: it hears only its own stretch of audio, and a
+  // failed batch keeps its original text without affecting the others.
+  const corrected = await mapWithConcurrency(batches, MAX_PARALLEL_AUTOFIX_BATCHES, async (batch, batchIndex) => {
+    const label = `Autofix batch ${batchIndex + 1}/${batches.length}`
+    const prompt = `You are an expert audio transcription proofreader, domain terminology specialist, and speaker diarization assistant.
 You are given a draft SRT subtitle transcript generated by an acoustic Speech-to-Text model with precise timestamps but containing phonetic mishearings, garbled business/tech jargon, brand names, and slang.
 
 Instructions:
 - Review the draft SRT and context.
 - Fix all phonetic mishearings, domain terms, brands, tools, frameworks, and metrics (e.g. pull requests, Cursor, Neovim, Tailwind, GLP-1, Ahrefs, AdSpy, Substack, CPM numbers, conversion funnels).
-${diarizationInstructions}- STRICTLY PRESERVE all original SRT cue indices and timestamp ranges (HH:MM:SS,mmm --> HH:MM:SS,mmm). Do not change, delete, or shift timestamps.
+- Correct brand and product spelling in place (e.g. PicSpot, PicSpot.co, Pixieset, Pic-Time, SmugMug, Pic-Flow, ShootProof, Ahrefs). If a cue has a hostname and TLD as separate words (picspot co), write them as one domain (PicSpot.co).
+- Do not add a period between a brand and its TLD. Never turn "PicSpot.co" into "Picspot." / "co".
+${diarizationInstructions}- You MUST return exactly ${batch.length} cues. Do not add, delete, merge, or split cues.
+- STRICTLY PRESERVE all original SRT cue indices and timestamp ranges (HH:MM:SS,mmm --> HH:MM:SS,mmm). Do not change, delete, or shift timestamps.
 - Return ONLY the corrected SRT subtitle content without markdown code blocks, explanation, or extra commentary.
 
 Draft SRT:
-${inputSrt}
+${convertSegmentsToSRT(batch)}
 `
 
-  try {
-    const userContent: any[] = [{ type: 'text', text: prompt }]
-    if (audioDataUri) {
-      userContent.push({ type: 'image_url', image_url: { url: audioDataUri } })
+    const userContent: ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
+    try {
+      const audio = await sliceAudio(
+        audioPath,
+        batch[0].start - AUTOFIX_AUDIO_PADDING_SECONDS,
+        batch[batch.length - 1].end + AUTOFIX_AUDIO_PADDING_SECONDS
+      )
+      userContent.push({ type: 'image_url', image_url: { url: toAudioDataUri('audio/mpeg', audio) } })
+    } catch {
+      // No audio context for this batch; proofread from the text alone
     }
 
-    const response = await openai.chat.completions.create({
-      model: fixModel,
-      max_tokens: 16384,
-      messages: [
-        {
-          role: 'user',
-          content: userContent,
-        },
-      ],
-    })
+    try {
+      const response = await openai.chat.completions.create({
+        model: route.model,
+        max_tokens: 8192,
+        messages: [{ role: 'user', content: userContent }],
+      })
 
-    const rawContent = response.choices?.[0]?.message?.content || ''
-    const cleanedSRT = rawContent
-      .replace(/^```(?:srt)?\n?/i, '')
-      .replace(/\n?```$/i, '')
-      .trim()
+      const refined = parseSRT(stripCodeFence(response.choices?.[0]?.message?.content || ''))
+      const mapped = applyRefinedCueTexts(batch, refined)
+      if (mapped) return mapped
 
-    const refined = parseSRT(cleanedSRT)
-    if (refined.length > 0) {
-      // Map refined text back to the original Whisper timecodes by index so LLM hallucinations cannot corrupt the timeline
-      if (refined.length === rawSegments.length) {
-        return rawSegments.map((seg, idx) => ({
-          ...seg,
-          text: refined[idx].text,
-        }))
-      }
-      return refined
+      console.warn(`⚠️ ${label} kept original text (${refined.length} cues returned, expected ${batch.length})`)
+    } catch (err) {
+      console.warn(`⚠️ ${label} kept original text:`, err instanceof Error ? err.message : String(err))
     }
-  } catch (err) {
-    console.warn('⚠️ LLM autofix pass skipped due to error:', err instanceof Error ? err.message : String(err))
-  }
+    return batch
+  })
 
-  return rawSegments
+  return corrected.flat()
 }
 
-async function transcribeWithWhisper(
-  audioPath: string,
-  apiKey: string,
-  options?: {
-    baseURL?: string
-    model?: string
-    autofixModel?: string
-    diarize?: boolean
-  }
-): Promise<WhisperResponse> {
-  const { default: OpenAI, toFile } = await import('openai')
-  const model = options?.model || 'whisper-1'
-  const baseURL = options?.baseURL
+async function transcribeWithWhisper(audioPath: string, route: Route): Promise<WhisperResponse> {
+  const { model } = route
+  const openai = await createClient(route)
+  const fileBuffer = await readFile(audioPath)
 
-  // Read file as buffer
-  const fs = await import('fs/promises')
-  const { basename } = await import('path')
-  const fileBuffer = await fs.readFile(audioPath)
-  const fileName = basename(audioPath)
-
-  const ext = fileName.toLowerCase().split('.').pop()
-  const mimeTypes: Record<string, string> = {
-    mp3: 'audio/mpeg',
-    mp4: 'audio/mp4',
-    m4a: 'audio/mp4',
-    wav: 'audio/wav',
-    ogg: 'audio/ogg',
-    webm: 'audio/webm',
-    flac: 'audio/flac',
-  }
-  const mimeType = (ext && mimeTypes[ext]) || 'application/octet-stream'
-
-  // If using OpenRouter or standard LLM models (e.g. google/gemini, etc.) via chat completions with multimodal audio
-  const isOpenRouterOrChatModel =
-    model.includes('/') ||
-    (baseURL && baseURL.includes('openrouter.ai')) ||
-    model.startsWith('google/') ||
-    model.startsWith('stealth/')
-
-  if (isOpenRouterOrChatModel) {
-    const openai = new OpenAI({
-      apiKey,
-      baseURL: baseURL || 'https://openrouter.ai/api/v1',
-    })
-
-    const base64Audio = fileBuffer.toString('base64')
-    const audioDataUri = `data:${mimeType};base64,${base64Audio}`
+  // Chat models (OpenRouter Gemini etc.) take the audio as multimodal input
+  if (isChatModel(model)) {
+    const audioDataUri = toAudioDataUri(audioMimeType(audioPath), fileBuffer)
 
     const chatResponse = await openai.chat.completions.create({
       model,
@@ -396,7 +376,7 @@ async function transcribeWithWhisper(
             {
               type: 'text',
               text:
-                'Transcribe all spoken dialogue in this audio verbatim. Output the transcription in standard SRT subtitle format with numeric cues and timestamps (HH:MM:SS,mmm --> HH:MM:SS,mmm). Return ONLY the raw SRT subtitle content without markdown code blocks, explanation, or commentary.',
+                'Transcribe all spoken dialogue in this audio verbatim. Output standard SRT subtitles (HH:MM:SS,mmm --> HH:MM:SS,mmm). Keep each cue short for on-screen captions: one clause or about 8 words, typically 2-4 seconds. Return ONLY the raw SRT content without markdown, explanation, or commentary.',
             },
             {
               type: 'image_url',
@@ -409,12 +389,7 @@ async function transcribeWithWhisper(
       ],
     })
 
-    const rawContent = chatResponse.choices?.[0]?.message?.content || ''
-    // Strip possible markdown code blocks if the model enclosed them
-    const cleanedSRT = rawContent
-      .replace(/^```(?:srt)?\n?/i, '')
-      .replace(/\n?```$/i, '')
-      .trim()
+    const cleanedSRT = stripCodeFence(chatResponse.choices?.[0]?.message?.content || '')
 
     const parsedSegments = parseSRT(cleanedSRT)
     const combinedText = parsedSegments.map((s) => s.text).join('\n') || cleanedSRT
@@ -428,13 +403,9 @@ async function transcribeWithWhisper(
     }
   }
 
-  const openai = new OpenAI({
-    apiKey,
-    ...(baseURL ? { baseURL } : {}),
-  })
-
   // Use SDK's toFile helper to create a proper File object for audio/transcriptions endpoint
-  const audioFile = await toFile(fileBuffer, fileName, { type: mimeType })
+  const { toFile } = await import('openai')
+  const audioFile = await toFile(fileBuffer, basename(audioPath), { type: audioMimeType(audioPath) })
 
   let transcription: any
   try {
@@ -472,24 +443,11 @@ async function transcribeWithWhisper(
 
   let result = transcription as WhisperResponse
 
-  // If 2-pass autofix refinement or speaker diarization is requested
-  const fixModel = options?.autofixModel
-  if (fixModel) {
-    let segments = result.segments || []
-    if (segments.length === 0 && result.words && result.words.length > 0) {
-      segments = synthesizeSegmentsFromWords(result.words)
-    }
-    if (segments.length > 0) {
-      const refinedSegments = await refineSegmentsWithLLM(audioPath, segments, apiKey, {
-        baseURL: options?.baseURL,
-        autofixModel: fixModel,
-        diarize: options?.diarize,
-      })
-      result = {
-        ...result,
-        segments: refinedSegments,
-        text: refinedSegments.map((s) => s.text).join('\n'),
-      }
+  const captionWords = wordsFromTranscription(result)
+  if (captionWords.length > 0) {
+    result = {
+      ...result,
+      segments: synthesizeSegmentsFromWords(captionWords),
     }
   }
 
@@ -517,96 +475,35 @@ async function transcribeWithWhisper(
  * ```
  */
 export async function transcribe(options: TranscribeOptions): Promise<TranscribeResult> {
-    const {
-      inputPath,
-      apiKey,
-      baseURL,
-      model,
-      autofix,
-      refineModel,
-      diarize,
-      outputPath,
-      optimize = true,
-      offsetSeconds = 0,
-      chunkMinutes,
-    } = options
+  const {
+    inputPath,
+    apiKey,
+    baseURL,
+    model,
+    autofix,
+    refineModel,
+    diarize,
+    outputPath,
+    offsetSeconds = 0,
+    chunkMinutes,
+  } = options
 
-    const autofixModel =
-      typeof autofix === 'string'
-        ? autofix
-        : autofix === true
-          ? undefined // Auto-detected from available API key (gpt-5.6-luna on OpenAI or gemini-3.7-flash on OpenRouter)
-          : refineModel
-  
   if (!existsSync(inputPath)) {
     throw new Error(`File not found: ${inputPath}`)
   }
-  
-    let resolvedApiKey =
-      apiKey ||
-      process.env.OPENAI_API_KEY ||
-      process.env.OPENROUTER_API_KEY
 
-    let fileConfig: any = {}
-    // Try reading from ~/.transcribe/config.json if not passed
-    try {
-      const { homedir } = require('os')
-      const { join } = require('path')
-      const configPath = join(homedir(), '.transcribe', 'config.json')
-      if (existsSync(configPath)) {
-        fileConfig = JSON.parse(require('fs').readFileSync(configPath, 'utf8'))
-        if (!resolvedApiKey) {
-          resolvedApiKey = fileConfig.openaiApiKey || fileConfig.openrouterApiKey || fileConfig.apiKey
-        }
-      }
-    } catch {}
+  const settings = resolveSettings({ apiKey, baseURL, model, autofix, refineModel, diarize })
 
-    if (!resolvedApiKey) {
-      throw new Error(
-        'API key is required. Provide it in options or set OPENAI_API_KEY / OPENROUTER_API_KEY environment variable.'
-      )
-    }
+  const ext = inputPath.toLowerCase().split('.').pop()
+  const supportedFormats = ['mp4', 'mp3', 'wav', 'm4a', 'webm', 'ogg', 'opus', 'mov', 'avi', 'mkv']
 
-    // If both OpenAI and OpenRouter are available:
-    // Whisper-1 uses OpenAI API key for acoustic alignment, and Autofix uses OpenRouter Gemini 3.7 Flash
-    const openrouterKey = process.env.OPENROUTER_API_KEY || fileConfig.openrouterApiKey || (resolvedApiKey?.startsWith('sk-or-') ? resolvedApiKey : undefined)
-    const openaiKey = process.env.OPENAI_API_KEY || fileConfig.openaiApiKey || (resolvedApiKey && !resolvedApiKey.startsWith('sk-or-') ? resolvedApiKey : undefined)
-
-    if (openaiKey && openrouterKey && !autofixModel) {
-      // Auto-mix! Whisper on OpenAI + Gemini on OpenRouter
-      resolvedApiKey = openaiKey
-    }
-
-    const finalApiKey: string = resolvedApiKey as string
-
-    // If using an OpenRouter key (sk-or-...) and no baseURL/model was explicitly set, auto-default to OpenRouter
-    let resolvedBaseURL = baseURL || process.env.TRANSCRIBE_BASE_URL || process.env.OPENAI_BASE_URL
-    let resolvedModel = model || process.env.TRANSCRIBE_MODEL
-
-    if (finalApiKey.startsWith('sk-or-') && !resolvedBaseURL) {
-      resolvedBaseURL = 'https://openrouter.ai/api/v1'
-    }
-
-    if (finalApiKey.startsWith('sk-or-') && !resolvedModel) {
-      resolvedModel = 'google/gemini-3.7-flash'
-    }
-
-    const ext = inputPath.toLowerCase().split('.').pop()
-    const supportedFormats = ['mp4', 'mp3', 'wav', 'm4a', 'webm', 'ogg', 'opus', 'mov', 'avi', 'mkv']
-
-    if (!ext || !supportedFormats.includes(ext)) {
-      throw new Error(`Unsupported format. Supported formats: ${supportedFormats.join(', ')}`)
-    }
-  
   if (!ext || !supportedFormats.includes(ext)) {
     throw new Error(`Unsupported format. Supported formats: ${supportedFormats.join(', ')}`)
   }
-  
+
   let audioPath = inputPath
   let tempAudioPath: string | null = null
-  let optimizedPath: string | null = null
   let chunkPaths: string[] = []
-  let speedFactor = 1.0
   
   // Extract audio if it's a video file
   if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
@@ -620,11 +517,6 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
   }
   
   try {
-    const initialDuration = await getMediaDurationSeconds(audioPath)
-
-    // Speech audio stays at original 1.0x speed to preserve acoustic transients and loanword phonemes
-    const durationOriginal = initialDuration
-
     if (offsetSeconds !== 0) {
       console.log(`🕒 Applying timestamp offset: ${offsetSeconds}s`)
     }
@@ -632,28 +524,30 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     let mergedSegments: WhisperSegment[] = []
     let mergedText = ''
     let language = 'unknown'
-    let originalDurationSeconds = durationOriginal
 
     const chunkMinutesToUse = chunkMinutes ?? AUTO_CHUNK_MINUTES
-    const chunkSecondsOriginal = Math.max(60, chunkMinutesToUse * 60)
-    const chunkSecondsOptimized = chunkSecondsOriginal / speedFactor
+    const chunkSeconds = Math.max(60, chunkMinutesToUse * 60)
 
-    chunkPaths = await splitAudioIntoChunks(audioPath, chunkSecondsOptimized)
+    chunkPaths = await splitAudioIntoChunks(audioPath, chunkSeconds)
 
     if (chunkPaths.length > 1) {
-      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSecondsOriginal}s)`)
+      console.log(`🧩 Chunking for reliability: ~${chunkMinutesToUse} min chunks (${chunkSeconds}s)`)
       console.log(`✅ Created ${chunkPaths.length} chunks`)
     }
 
     const chunkDurations = await Promise.all(chunkPaths.map((chunkPath) => getMediaDurationSeconds(chunkPath)))
-    let totalOptimizedSeconds = 0
+    let totalSeconds = 0
     const chunkOffsets = chunkDurations.map((duration) => {
-      const offset = totalOptimizedSeconds
-      totalOptimizedSeconds += duration
+      const offset = totalSeconds
+      totalSeconds += duration
       return offset
     })
 
     const chunkConcurrency = Math.min(MAX_PARALLEL_CHUNK_TRANSCRIPTIONS, chunkPaths.length)
+    console.log(`🧭 ${describeSettings(settings)}`)
+    if (settings.autofixSkipped) {
+      console.warn(`⚠️ Autofix skipped: ${settings.autofixSkipped}`)
+    }
     if (chunkPaths.length > 1) {
       console.log(`🎙️  Transcribing ${chunkPaths.length} chunks with up to ${chunkConcurrency} parallel requests...`)
     } else {
@@ -664,17 +558,15 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       if (chunkPaths.length > 1) {
         console.log(`🎙️  Transcribing chunk ${i + 1}/${chunkPaths.length}...`)
       }
-      return transcribeWithWhisper(chunkPath, finalApiKey, {
-        baseURL: resolvedBaseURL,
-        model: resolvedModel,
-        autofixModel,
-        diarize,
-      })
+      const result = await transcribeWithWhisper(chunkPath, settings.transcribe)
+      if (!settings.autofix || !result.segments?.length) return result
+
+      const refined = await refineSegmentsWithLLM(chunkPath, result.segments, settings.autofix, settings.diarize)
+      return { ...result, segments: refined, text: refined.map((s) => s.text).join('\n') }
     })
 
     for (let i = 0; i < chunkTranscriptions.length; i++) {
       const chunkTranscription = chunkTranscriptions[i]
-      const offsetOptimizedSeconds = chunkOffsets[i]
 
       if (i === 0 && chunkTranscription.language) {
         language = chunkTranscription.language
@@ -686,17 +578,14 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
 
       let rawSegments = chunkTranscription.segments
       if (!rawSegments || !Array.isArray(rawSegments)) {
-        if (chunkTranscription.words && Array.isArray(chunkTranscription.words) && chunkTranscription.words.length > 0) {
-          rawSegments = synthesizeSegmentsFromWords(chunkTranscription.words)
-        } else if (chunkTranscription.text) {
-          // If neither segments nor words were returned, create a single fallback segment spanning chunk duration
-          const chunkDuration = chunkDurations[i] || durationOriginal
+        if (chunkTranscription.text) {
+          // No segments returned: create a single fallback segment spanning chunk duration
           rawSegments = [
             {
               id: 0,
               seek: 0,
               start: 0,
-              end: chunkDuration,
+              end: chunkDurations[i],
               text: chunkTranscription.text,
               tokens: [],
               temperature: 0,
@@ -716,17 +605,11 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
 
       const transformed = transformSegments(
         rawSegments,
-        toOriginalTimeline({
-          chunkOffsetSeconds: offsetOptimizedSeconds,
-          speedFactor,
-          offsetSeconds,
-        })
+        toOriginalTimeline({ chunkOffsetSeconds: chunkOffsets[i], offsetSeconds })
       )
 
       mergedSegments.push(...transformed)
     }
-
-    originalDurationSeconds = totalOptimizedSeconds * speedFactor
 
     // Sort segments by start time (important for chunked transcriptions)
     mergedSegments.sort((a, b) => a.start - b.start)
@@ -744,7 +627,7 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
       srtPath,
       text: mergedText.trim(),
       language,
-      duration: originalDurationSeconds
+      duration: totalSeconds,
     }
   } finally {
     // Clean up temporary files
@@ -755,9 +638,6 @@ export async function transcribe(options: TranscribeOptions): Promise<Transcribe
     }
     if (tempAudioPath && existsSync(tempAudioPath)) {
       unlinkSync(tempAudioPath)
-    }
-    if (optimizedPath && existsSync(optimizedPath)) {
-      unlinkSync(optimizedPath)
     }
   }
 }

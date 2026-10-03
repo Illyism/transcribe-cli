@@ -20,7 +20,7 @@ npx skills add Illyism/transcribe-cli@transcribe
 
 ## Core Transcription Skill
 
-- **[transcribe](./transcribe/SKILL.md)** — Decision tree and command guide for transcribing any media input (local files, directories, YouTube, Instagram Reels, Screen Studio, remote URLs) with flags for output paths, raw audio, timecode offsets, and cookies.
+- **[transcribe](./transcribe/SKILL.md)** — Decision tree and command guide for transcribing any media input (local files, directories, YouTube, Instagram Reels, Screen Studio, remote URLs) with flags for output paths, autofix, timecode offsets, and cookies.
 
 ## Post-Transcription Skills
 

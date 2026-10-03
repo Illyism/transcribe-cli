@@ -106,12 +106,11 @@ npm install -g @illyism/transcribe
 transcribe video.mp4
 transcribe audio.mp3
 
-# Configure API key
-export OPENAI_API_KEY=sk-...
+# Configure API key (OpenAI or OpenRouter, auto-detected)
+transcribe setup
 
-# Or create config file
-mkdir -p ~/.transcribe
-echo '{"apiKey": "sk-..."}' > ~/.transcribe/config.json
+# Or use an environment variable
+export OPENAI_API_KEY=sk-...
 ```
 
 ## Need Help?

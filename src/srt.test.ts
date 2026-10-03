@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   convertSegmentsToSRT,
   formatTime,
+  applyRefinedCueTexts,
+  nextWordIsHostTld,
   synthesizeSegmentsFromWords,
   toOriginalTimeline,
   transformSegments,
+  wordsFromTranscription,
 } from "./srt";
 import type { WhisperSegment } from "./types";
 
@@ -126,6 +129,44 @@ describe("synthesizeSegmentsFromWords", () => {
     expect(segments[1].end).toBe(4.5);
   });
 
+  test("prefers caption-length cues by default", () => {
+    const words = [
+      { word: " One", start: 0, end: 0.3 },
+      { word: " two", start: 0.3, end: 0.6 },
+      { word: " three", start: 0.6, end: 0.9 },
+      { word: " four", start: 0.9, end: 1.2 },
+      { word: " five", start: 1.2, end: 1.5 },
+      { word: " six", start: 1.5, end: 1.8 },
+      { word: " seven", start: 1.8, end: 2.1 },
+      { word: " eight", start: 2.1, end: 2.4 },
+      { word: " nine", start: 2.4, end: 2.7 },
+      { word: " ten", start: 2.7, end: 3.0 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words);
+    expect(segments.length).toBe(2);
+    expect(segments[0].text).toBe("One two three four five six seven eight");
+    expect(segments[1].text).toBe("nine ten");
+  });
+
+  test("splits on a comma once a clause is long enough", () => {
+    const words = [
+      { word: "They", start: 0, end: 0.2 },
+      { word: "make", start: 0.2, end: 0.4 },
+      { word: "professional", start: 0.4, end: 0.8 },
+      { word: "galleries,", start: 0.8, end: 1.2 },
+      { word: "then", start: 1.2, end: 1.4 },
+      { word: "share", start: 1.4, end: 1.7 },
+      { word: "them", start: 1.7, end: 1.9 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words);
+    expect(segments.map((segment) => segment.text)).toEqual([
+      "They make professional galleries,",
+      "then share them",
+    ]);
+  });
+
   test("splits words exceeding max duration", () => {
     const words = [
       { word: "One", start: 0, end: 2.0 },
@@ -138,6 +179,75 @@ describe("synthesizeSegmentsFromWords", () => {
     expect(segments.length).toBe(2);
     expect(segments[0].text).toBe("One Two Three");
     expect(segments[1].text).toBe("Four");
+  });
+
+  test("keeps a hostname and TLD in the same cue", () => {
+    const words = [
+      { word: "look", start: 0, end: 0.2 },
+      { word: "at", start: 0.2, end: 0.4 },
+      { word: "picspot", start: 0.4, end: 0.8 },
+      { word: "co", start: 0.8, end: 1.0 },
+      { word: "to", start: 1.0, end: 1.2 },
+      { word: "see", start: 1.2, end: 1.4 },
+    ];
+
+    const segments = synthesizeSegmentsFromWords(words, { maxWordsPerSegment: 3 });
+    expect(segments.map((item) => item.text)).toEqual(["look at picspot co", "to see"]);
+  });
+});
+
+describe("nextWordIsHostTld", () => {
+  test("matches common TLDs after a hostname", () => {
+    expect(nextWordIsHostTld("picspot", "co")).toBe(true);
+    expect(nextWordIsHostTld("Pixieset.", "com")).toBe(true);
+    expect(nextWordIsHostTld("because", "they")).toBe(false);
+    expect(nextWordIsHostTld("go", "to")).toBe(false);
+  });
+});
+
+describe("applyRefinedCueTexts", () => {
+  test("maps refined text onto original timings", () => {
+    const original = [
+      segment({ id: 0, start: 0, end: 1, text: "picspot co" }),
+      segment({ id: 1, start: 1, end: 2, text: "looks good" }),
+    ];
+    const refined = [
+      segment({ id: 0, start: 99, end: 100, text: "PicSpot.co" }),
+      segment({ id: 1, start: 101, end: 102, text: "Looks good." }),
+    ];
+
+    expect(applyRefinedCueTexts(original, refined)).toEqual([
+      { ...original[0], text: "PicSpot.co" },
+      { ...original[1], text: "Looks good." },
+    ]);
+  });
+
+  test("returns null when the model drops or invents cues", () => {
+    const original = [segment({ text: "one" }), segment({ text: "two" })];
+    expect(applyRefinedCueTexts(original, [segment({ text: "one" })])).toBeNull();
+  });
+});
+
+describe("wordsFromTranscription", () => {
+  test("prefers top-level words, then nested segment words", () => {
+    expect(
+      wordsFromTranscription({
+        words: [{ word: "hi", start: 0, end: 1 }],
+        segments: [{ words: [{ word: "nope", start: 2, end: 3 }] }],
+      })
+    ).toEqual([{ word: "hi", start: 0, end: 1 }]);
+
+    expect(
+      wordsFromTranscription({
+        segments: [
+          { words: [{ word: "a", start: 0, end: 0.5 }] },
+          { words: [{ word: "b", start: 0.5, end: 1 }] },
+        ],
+      })
+    ).toEqual([
+      { word: "a", start: 0, end: 0.5 },
+      { word: "b", start: 0.5, end: 1 },
+    ]);
   });
 });
 
@@ -177,69 +287,36 @@ describe("transformSegments", () => {
 });
 
 describe("toOriginalTimeline", () => {
-  test("is the identity for unoptimized, unchunked, unshifted audio", () => {
-    const map = toOriginalTimeline({
-      chunkOffsetSeconds: 0,
-      speedFactor: 1,
-      offsetSeconds: 0,
-    });
+  test("is the identity for unchunked, unshifted audio", () => {
+    const map = toOriginalTimeline({ chunkOffsetSeconds: 0, offsetSeconds: 0 });
     expect(map(0)).toBe(0);
     expect(map(42.5)).toBe(42.5);
   });
 
-  test("undoes the 1.2x speed-up", () => {
-    const map = toOriginalTimeline({
-      chunkOffsetSeconds: 0,
-      speedFactor: 1.2,
-      offsetSeconds: 0,
-    });
-    // 60s of sped-up audio covers 72s of the original recording
-    expect(map(60)).toBeCloseTo(72, 6);
-  });
-
   test("places a later chunk after the ones before it", () => {
-    const map = toOriginalTimeline({
-      chunkOffsetSeconds: 1000,
-      speedFactor: 1.2,
-      offsetSeconds: 0,
-    });
-    expect(map(0)).toBeCloseTo(1200, 6);
-    expect(map(10)).toBeCloseTo(1212, 6);
+    const map = toOriginalTimeline({ chunkOffsetSeconds: 1000, offsetSeconds: 0 });
+    expect(map(0)).toBe(1000);
+    expect(map(10)).toBe(1010);
   });
 
-  test("applies the user offset in original time, not sped-up time", () => {
-    const map = toOriginalTimeline({
-      chunkOffsetSeconds: 0,
-      speedFactor: 1.2,
-      offsetSeconds: 3600,
-    });
-    expect(map(0)).toBeCloseTo(3600, 6);
-    expect(map(10)).toBeCloseTo(3612, 6);
+  test("applies the user offset", () => {
+    const map = toOriginalTimeline({ chunkOffsetSeconds: 0, offsetSeconds: 3600 });
+    expect(map(0)).toBe(3600);
+    expect(map(10)).toBe(3610);
   });
 
-  test("chunk boundaries stay continuous on the original timeline", () => {
-    const speedFactor = 1.2;
+  test("chunk boundaries stay continuous", () => {
     const chunkDuration = 1000;
-    const endOfFirst = toOriginalTimeline({
-      chunkOffsetSeconds: 0,
-      speedFactor,
-      offsetSeconds: 0,
-    })(chunkDuration);
-    const startOfSecond = toOriginalTimeline({
-      chunkOffsetSeconds: chunkDuration,
-      speedFactor,
-      offsetSeconds: 0,
-    })(0);
-
-    expect(startOfSecond).toBeCloseTo(endOfFirst, 6);
+    const endOfFirst = toOriginalTimeline({ chunkOffsetSeconds: 0, offsetSeconds: 0 })(chunkDuration);
+    const startOfSecond = toOriginalTimeline({ chunkOffsetSeconds: chunkDuration, offsetSeconds: 0 })(0);
+    expect(startOfSecond).toBe(endOfFirst);
   });
 });
 
 describe("chunked transcription end to end", () => {
-  test("maps two sped-up chunks onto one offset SRT timeline", () => {
-    const speedFactor = 1.2;
+  test("maps two chunks onto one offset SRT timeline", () => {
     const offsetSeconds = 3600;
-    const chunkDurations = [0, 500];
+    const chunkOffsets = [0, 600];
 
     const chunks: WhisperSegment[][] = [
       [
@@ -252,26 +329,22 @@ describe("chunked transcription end to end", () => {
     const merged = chunks.flatMap((segments, index) =>
       transformSegments(
         segments,
-        toOriginalTimeline({
-          chunkOffsetSeconds: chunkDurations[index],
-          speedFactor,
-          offsetSeconds,
-        })
+        toOriginalTimeline({ chunkOffsetSeconds: chunkOffsets[index], offsetSeconds })
       )
     );
 
     expect(convertSegmentsToSRT(merged)).toBe(
       [
         "1",
-        "01:00:00,000 --> 01:00:03,000",
+        "01:00:00,000 --> 01:00:02,500",
         "first chunk",
         "",
         "2",
-        "01:00:03,000 --> 01:00:06,000",
+        "01:00:02,500 --> 01:00:05,000",
         "still first",
         "",
         "3",
-        "01:10:00,000 --> 01:10:03,000",
+        "01:10:00,000 --> 01:10:02,500",
         "second chunk",
         "",
         "",

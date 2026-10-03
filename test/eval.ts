@@ -1,213 +1,224 @@
 #!/usr/bin/env bun
 
 import fs from 'fs/promises'
-import { existsSync, readFileSync } from 'fs'
-import os from 'os'
+import { existsSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { transcribe } from '../src/index'
+import { transcribe, type TranscribeOptions } from '../src/index'
+import {
+  appendOpenRouterIdsSection,
+  writeEvalResultsJson,
+  type OpenRouterGenerationRef,
+} from './eval-openrouter-ids'
 import { formatEvalError } from './format-eval-error'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const WHISPER_USD_PER_MINUTE = 0.006
+
+type PresetOptions = Pick<TranscribeOptions, 'model' | 'autofix' | 'diarize'>
+
 export interface EvalPreset {
   name: string
-  model: string
-  autofix?: boolean | string
-  diarize?: boolean
+  options: PresetOptions
 }
 
+// Production default first: no options, so keys and routing resolve exactly as the CLI does
 export const EVAL_PRESETS: EvalPreset[] = [
-  {
-    name: 'whisper-raw',
-    model: 'whisper-1',
-  },
-  {
-    name: 'gemini-multimodal',
-    model: 'google/gemini-3.7-flash',
-  },
-  {
-    name: 'hybrid-whisper-autofix-diarize',
-    model: 'whisper-1',
-    autofix: 'google/gemini-3.7-flash',
-    diarize: true,
-  },
+  { name: 'default', options: {} },
+  { name: 'whisper-raw', options: { model: 'whisper-1', autofix: false } },
+  { name: 'gemini-multimodal', options: { model: 'gemini', autofix: false } },
+  { name: 'hybrid-autofix-diarize', options: { model: 'whisper-1', autofix: true } },
 ]
 
-function resolveCredentials(model: string): { apiKey: string; baseURL?: string } {
-  let fileConfig: { apiKey?: string; baseURL?: string; model?: string } = {}
-  try {
-    const configPath = path.join(os.homedir(), '.transcribe', 'config.json')
-    if (existsSync(configPath)) {
-      fileConfig = JSON.parse(readFileSync(configPath, 'utf8'))
-    }
-  } catch {}
+// Flags: --matrix (all presets) | --models=a,b (subset by name) | none (production default)
+// --full benchmarks the full-length recording instead of the short sample
+const isMatrix = process.argv.includes('--matrix')
+const isFull = process.argv.includes('--full')
+const requested = process.argv
+  .find((a) => a.startsWith('--models='))
+  ?.split('=')[1]
+  ?.split(',')
+  .map((m) => m.trim().toLowerCase())
 
-  let envFile: Record<string, string> = {}
-  try {
-    const envPath = path.join(__dirname, '..', '.env')
-    if (existsSync(envPath)) {
-      const lines = readFileSync(envPath, 'utf8').split('\n')
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-          const [k, v] = trimmed.split('=', 2)
-          envFile[k.trim()] = v.trim().replace(/^["']|["']$/g, '')
-        }
-      }
-    }
-  } catch {}
+const PRESETS = requested
+  ? EVAL_PRESETS.filter((p) => requested.some((r) => p.name.includes(r)))
+  : isMatrix
+    ? EVAL_PRESETS
+    : EVAL_PRESETS.slice(0, 1)
 
-  const isOpenRouterModel = model.includes('/') || model.startsWith('google/')
-  
-  if (isOpenRouterModel) {
-    const apiKey =
-      process.env.OPENROUTER_API_KEY ||
-      envFile.OPENROUTER_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      envFile.OPENAI_API_KEY ||
-      fileConfig.apiKey ||
-      ''
-    const baseURL =
-      process.env.TRANSCRIBE_BASE_URL ||
-      process.env.OPENAI_BASE_URL ||
-      envFile.OPENAI_BASE_URL ||
-      fileConfig.baseURL ||
-      'https://openrouter.ai/api/v1'
-    return { apiKey, baseURL }
+interface ApiCall {
+  kind: 'chat' | 'transcription'
+  model?: string
+  requestBytes: number
+  inputTokens: number
+  audioTokens: number
+  outputTokens: number
+  reasoningTokens: number
+  cost?: number
+  generationId?: string
+}
+
+// transcribe() does not report usage, so the eval watches the provider calls it makes
+let calls: ApiCall[] = []
+const realFetch = globalThis.fetch
+
+function bodyBytes(body: unknown): number {
+  if (typeof body === 'string') return Buffer.byteLength(body)
+  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return body.byteLength
+  return 0
+}
+
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === 'string' ? input : (input?.url ?? String(input))
+  const kind = url.includes('/chat/completions')
+    ? 'chat'
+    : url.includes('/audio/transcriptions')
+      ? 'transcription'
+      : undefined
+  const response = await realFetch(input, init)
+  if (!kind) return response
+
+  const call: ApiCall = {
+    kind,
+    requestBytes: bodyBytes(init?.body),
+    inputTokens: 0,
+    audioTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
   }
+  calls.push(call)
+  try {
+    const json: any = await response.clone().json()
+    call.model = json.model
+    call.inputTokens = json.usage?.prompt_tokens ?? 0
+    call.audioTokens = json.usage?.prompt_tokens_details?.audio_tokens ?? 0
+    call.outputTokens = json.usage?.completion_tokens ?? 0
+    call.reasoningTokens = json.usage?.completion_tokens_details?.reasoning_tokens ?? 0
+    if (typeof json.usage?.cost === 'number') call.cost = json.usage.cost
+    if (typeof json.id === 'string' && json.id.startsWith('gen-')) call.generationId = json.id
+  } catch {}
+  return response
+}) as typeof fetch
 
-  const apiKey =
-    process.env.OPENAI_API_KEY ||
-    envFile.OPENAI_API_KEY ||
-    fileConfig.apiKey ||
-    process.env.OPENROUTER_API_KEY ||
-    envFile.OPENROUTER_API_KEY ||
-    ''
-  const baseURL =
-    process.env.TRANSCRIBE_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
-    fileConfig.baseURL ||
-    undefined
+interface ResultRow {
+  preset: string
+  timeMs: number
+  durationSeconds?: number
+  cues?: number
+  chatCalls: number
+  requestMB: number
+  inputTokens: number
+  audioTokens: number
+  outputTokens: number
+  reasoningTokens: number
+  /** Provider-reported LLM cost plus Whisper list price; undefined when unknown */
+  cost?: number
+  error?: string
+  srt?: string
+}
 
-  return { apiKey, baseURL }
+function summarize(preset: string, timeMs: number, durationSeconds: number | undefined): ResultRow {
+  const chat = calls.filter((c) => c.kind === 'chat')
+  const usedWhisper = calls.some((c) => c.kind === 'transcription')
+  const chatCostKnown = chat.every((c) => c.cost !== undefined)
+  const whisperCost =
+    usedWhisper && durationSeconds ? (durationSeconds / 60) * WHISPER_USD_PER_MINUTE : 0
+
+  return {
+    preset,
+    timeMs,
+    durationSeconds,
+    chatCalls: chat.length,
+    requestMB: chat.reduce((sum, c) => sum + c.requestBytes, 0) / 1024 / 1024,
+    inputTokens: chat.reduce((sum, c) => sum + c.inputTokens, 0),
+    audioTokens: chat.reduce((sum, c) => sum + c.audioTokens, 0),
+    outputTokens: chat.reduce((sum, c) => sum + c.outputTokens, 0),
+    reasoningTokens: chat.reduce((sum, c) => sum + c.reasoningTokens, 0),
+    cost:
+      chatCostKnown && durationSeconds
+        ? chat.reduce((sum, c) => sum + (c.cost ?? 0), 0) + whisperCost
+        : undefined,
+  }
 }
 
 async function runEval() {
-  const stitchedSamplePath = path.join(__dirname, 'stitched-sample.m4a')
-  const stitchedFullPath = path.join(__dirname, 'stitched.m4a')
+  const samplePath = path.join(__dirname, 'stitched-sample.m4a')
+  const fullPath = path.join(__dirname, 'stitched.m4a')
+  const inputAudio = isFull || !existsSync(samplePath) ? fullPath : samplePath
 
-  // Support flag --full to benchmark full 2h audio, otherwise run on 30s sample for quick feedback
-  const isFull = process.argv.includes('--full')
-  const inputAudio = isFull && existsSync(stitchedFullPath) ? stitchedFullPath : (existsSync(stitchedSamplePath) ? stitchedSamplePath : stitchedFullPath)
+  console.log(`Running ${PRESETS.length} preset(s) on ${path.basename(inputAudio)}...\n`)
 
-  console.log(`🚀 Running Multi-Pass Evaluation on ${path.basename(inputAudio)}...`)
-  console.log(`Presets to test: ${EVAL_PRESETS.map((p) => p.name).join(', ')}\n`)
+  const results: ResultRow[] = []
+  const openRouterIds: OpenRouterGenerationRef[] = []
 
-  const summaryResults: Array<{
-    preset: string
-    timeMs: number
-    duration: number
-    status: string
-    cuesCount: number
-    error?: string
-    outputFile?: string
-  }> = []
-
-  for (const preset of EVAL_PRESETS) {
-    const { apiKey, baseURL } = resolveCredentials(preset.model)
-    console.log(`\n🎙️  [Preset: ${preset.name}] Starting transcription...`)
+  for (const preset of PRESETS) {
+    calls = []
+    const srtPath = path.join(__dirname, `eval.${preset.name}.srt`)
     const start = Date.now()
 
-    const srtPath = path.join(__dirname, `eval.${preset.name}.srt`)
-    const mdPath = path.join(__dirname, `eval.${preset.name}.md`)
-
     try {
-      if (!apiKey) {
-        throw new Error(`Missing API key for ${preset.name}`)
-      }
+      const res = await transcribe({ inputPath: inputAudio, outputPath: srtPath, ...preset.options })
+      const srt = await fs.readFile(srtPath, 'utf8')
+      const cues = srt.split(/\n\s*\n/).filter((b) => b.includes('-->')).length
+      if (cues === 0) throw new Error('Transcription returned no cues')
 
-      const res = await transcribe({
-        inputPath: inputAudio,
-        outputPath: srtPath,
-        apiKey,
-        baseURL,
-        model: preset.model,
-        autofix: preset.autofix,
-        diarize: preset.diarize,
-        optimize: false, // Keep 1.0x native audio to avoid acoustic distortion
-      })
-
-      const timeMs = Date.now() - start
-      let srtContent = ''
-      if (existsSync(srtPath)) {
-        srtContent = await fs.readFile(srtPath, 'utf8')
-      }
-
-      const cues = srtContent.split(/\n\s*\n/).filter((b) => b.includes('-->')).length
-
-      const mdContent = [
-        `# Evaluation Output: \`${preset.name}\``,
-        '',
-        `- **Model**: \`${preset.model}\``,
-        preset.autofix ? `- **Autofix Model**: \`${preset.autofix}\`` : '',
-        preset.diarize ? `- **Speaker Diarization**: Enabled` : '',
-        `- **Media Duration**: ${(res.duration / 60).toFixed(2)}m (${res.duration.toFixed(2)}s)`,
-        `- **Processing Latency**: ${(timeMs / 1000).toFixed(2)}s`,
-        `- **Total SRT Cues**: ${cues}`,
-        '',
-        '## SRT Subtitles',
-        '',
-        '```srt',
-        srtContent.trim(),
-        '```',
-        '',
-        '## Plaintext',
-        '',
-        res.text.trim(),
-        '',
-      ].filter(Boolean).join('\n')
-
-      await fs.writeFile(mdPath, mdContent, 'utf8')
-
-      summaryResults.push({
-        preset: preset.name,
-        timeMs,
-        duration: res.duration,
-        cuesCount: cues,
-        status: '✅',
-        outputFile: mdPath,
-      })
-
-      console.log(`✅ [${preset.name}] Finished in ${(timeMs / 1000).toFixed(1)}s! Cues: ${cues}`)
+      const row = { ...summarize(preset.name, Date.now() - start, res.duration), cues, srt }
+      results.push(row)
+      console.log(`✅ ${preset.name} (${(row.timeMs / 1000).toFixed(1)}s, ${cues} cues)`)
     } catch (err) {
-      const timeMs = Date.now() - start
       const error = formatEvalError(err)
-      summaryResults.push({
-        preset: preset.name,
-        timeMs,
-        duration: 0,
-        cuesCount: 0,
-        status: '❌',
-        error,
+      results.push({ ...summarize(preset.name, Date.now() - start, undefined), error })
+      console.log(`❌ ${preset.name}: ${error}`)
+    }
+
+    for (const call of calls) {
+      if (!call.generationId) continue
+      openRouterIds.push({
+        stage: call.kind,
+        model: call.model ?? 'unknown',
+        caseName: preset.name,
+        providerRequestId: call.generationId,
       })
-      console.log(`❌ [${preset.name}] Failed: ${error}`)
     }
   }
 
-  console.log('\n' + '═'.repeat(90))
-  console.log('📊 MULTI-PASS EVALUATION SUMMARY')
-  console.log('═'.repeat(90))
-  console.log('| Preset | Status | Latency | Duration | Cues | Output File |')
-  console.log('| :--- | :--- | ---: | ---: | ---: | :--- |')
-  for (const s of summaryResults) {
-    const timeStr = `${(s.timeMs / 1000).toFixed(1)}s`
-    const durStr = s.duration ? `${s.duration.toFixed(1)}s` : '—'
-    const outStr = s.outputFile ? path.basename(s.outputFile) : s.error || '—'
-    console.log(`| \`${s.preset}\` | ${s.status} | ${timeStr} | ${durStr} | ${s.cuesCount} | ${outStr} |`)
+  const md: string[] = []
+  md.push('# Transcription Evaluation\n')
+  md.push(`Input: \`${path.basename(inputAudio)}\`\n`)
+  md.push('## Summary (objective metrics — judge quality from the raw outputs below)\n')
+  md.push(
+    'Cost = provider-reported LLM cost + Whisper list price ($0.006/min). "Cues" is a count, not a quality score.\n'
+  )
+  md.push(
+    '| Preset | Latency (s) | Media (s) | Cues | LLM calls | Upload (MB) | Tokens in (audio) / out (reasoning) | Cost ($) | Status |'
+  )
+  md.push('| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |')
+  for (const r of results) {
+    const tokens = r.chatCalls ? `${r.inputTokens} (${r.audioTokens}) / ${r.outputTokens} (${r.reasoningTokens})` : '—'
+    const cost = r.cost === undefined ? '—' : `$${r.cost.toFixed(4)}`
+    md.push(
+      `| \`${r.preset}\` | ${(r.timeMs / 1000).toFixed(1)} | ${r.durationSeconds?.toFixed(1) ?? '—'} | ${r.cues ?? '—'} | ${r.chatCalls} | ${r.requestMB.toFixed(2)} | ${tokens} | ${cost} | ${r.error ? '❌' : '✅'} |`
+    )
   }
-  console.log('═'.repeat(90) + '\n')
+
+  md.push('\n## Raw Outputs\n')
+  for (const r of results) {
+    md.push(`### \`${r.preset}\`\n`)
+    md.push(r.error ? `**Error**: ${r.error}\n` : '```srt\n' + r.srt!.trim() + '\n```\n')
+  }
+
+  appendOpenRouterIdsSection(md, openRouterIds)
+
+  const outputPath = path.join(__dirname, 'eval.md')
+  await fs.writeFile(outputPath, md.join('\n'), 'utf-8')
+  await writeEvalResultsJson(__dirname, {
+    runTimestamp: new Date().toISOString(),
+    openRouterIds,
+    results: results.map(({ srt, ...row }) => row),
+  })
+  console.log(`\n✅ Results written to ${outputPath}`)
 }
 
 runEval().catch(console.error)

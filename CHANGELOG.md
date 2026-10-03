@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-10-04
+
+### Changed
+- **Autofix is on by default when both an OpenAI and an OpenRouter key are set.** The default pass only cleans up text; speaker labels still need `--autofix` or `--diarize`. Skip it with `--no-autofix`.
+
+- **Autofix sends each batch only its own audio.** Every batch of 40 cues used to carry the whole chunk's audio; now it gets a slice covering just those cues, and batches run 4 at a time. On a 6-minute sample: 106s → 51s, 12.2 MB → 1.8 MB uploaded, 32.5k → 14.4k input tokens. A failed batch keeps its original text without discarding the rest of the chunk.
+
+### Removed
+- The 1.2x speed-up code path (`src/optimize.ts`, the `optimize` option, the "Optimizations" help text). It has been off since 4.0.0; audio is always transcribed at original speed. `--raw` is still accepted and does nothing.
+- The `ffmpeg` peer dependency, which made npm install an unrelated package of that name. FFmpeg the program is still required.
+
+### Added
+- `transcribe setup`: paste one key, the provider is detected, the key is checked and saved to `~/.transcribe/config.json` (mode 600). Running without a key in a terminal starts it automatically.
+- `transcribe doctor`: shows which keys are set and valid, whether ffmpeg / yt-dlp are installed, and which model each pass will use.
+- `--model gemini` and `--model whisper` shortcuts.
+- Every run prints the route it picked, e.g. `whisper-1 (OpenAI) → autofix google/gemini-3.7-flash (OpenRouter)`.
+
+### Fixed
+- With both keys set, `--model google/gemini-...` sent the OpenAI key to OpenRouter and failed with `401 Missing Authentication header`. Each model now uses the key of its own provider.
+- `OPENAI_BASE_URL=https://openrouter.ai/api/v1` with both keys set sent `whisper-1` to OpenRouter and failed with 401.
+- `--autofix` was silently ignored when pass 1 ran on a chat model (OpenRouter-only setups).
+- A key in `OPENAI_API_KEY` that is really an OpenRouter key (`sk-or-...`) is treated as an OpenRouter key.
+- Model/key mismatches fail before any download or audio extraction, with the fix in the message.
+
+## [4.1.1] - 2026-08-31
+
+### Fixed
+- **Autofix no longer corrupts short cues**: Proofreading runs in batches of 40 cues and keeps the original text when the model returns a different cue count. A truncated Gemini pass can no longer drop minutes of captions or invent inverted timestamps.
+- Hostname + TLD word pairs (`picspot` / `co`) stay in one cue so autofix can write `PicSpot.co`.
+
+## [4.1.0] - 2026-08-31
+
+### Changed
+- **Shorter caption cues**: When Whisper returns word timestamps, cues are rebuilt for on-screen captions (~8 words / ~3.5s, split on pauses, sentences, and clauses). Whisper's native 6–10s segments are no longer used as-is.
+- Chat/Gemini SRT prompts now ask for the same short cue length.
+
 ## [4.0.0] - 2026-08-22
 
 ### Added

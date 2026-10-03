@@ -1,13 +1,6 @@
 #!/usr/bin/env node
 
-/**
- * Transcribe audio/video files to SRT format
- *
- * Usage: transcribe <path-to-file>
- *
- * Supports: .mp4, .mp3, .wav, .m4a, .webm, .ogg
- * Requires: OPENAI_API_KEY environment variable
- */
+// Transcribe audio/video files, folders and URLs to SRT. See --help for usage.
 
 import {
   cancel,
@@ -19,7 +12,6 @@ import {
   select,
 } from "@clack/prompts";
 import { existsSync, statSync, unlinkSync } from "fs";
-import { homedir } from "os";
 import { basename, extname, join, resolve } from "path";
 import {
   listMediaFilesInDir,
@@ -35,75 +27,9 @@ import {
   getScreenStudioSlug,
 } from "./screenstudio";
 import { installMacQuickAction } from "./mac";
+import { MissingKeyError, resolveSettings } from "./config";
+import { runDoctor, runSetup } from "./setup";
 import { transcribe } from "./transcribe";
-
-interface ResolvedConfig {
-  apiKey: string;
-  baseURL?: string;
-  model?: string;
-}
-
-function getConfig(cliModel?: string, cliBaseUrl?: string): ResolvedConfig {
-  let fileConfig: {
-    apiKey?: string;
-    openaiApiKey?: string;
-    openrouterApiKey?: string;
-    baseURL?: string;
-    model?: string;
-  } = {};
-
-  try {
-    const configPath = join(homedir(), ".transcribe", "config.json");
-    if (existsSync(configPath)) {
-      fileConfig = require(configPath);
-    }
-  } catch (error) {
-    // Config file doesn't exist or is invalid
-  }
-
-  // If both keys exist:
-  // Primary transcription defaults to OpenAI Whisper-1 (via OPENAI_API_KEY)
-  // Autofix / Refinement will automatically use OpenRouter Gemini-3.7-flash (via OPENROUTER_API_KEY)
-  const openaiKey = process.env.OPENAI_API_KEY || fileConfig.openaiApiKey || (fileConfig.apiKey && !fileConfig.apiKey.startsWith('sk-or-') ? fileConfig.apiKey : undefined);
-  const openrouterKey = process.env.OPENROUTER_API_KEY || fileConfig.openrouterApiKey || (fileConfig.apiKey && fileConfig.apiKey.startsWith('sk-or-') ? fileConfig.apiKey : undefined);
-
-  const apiKey = openaiKey || openrouterKey || fileConfig.apiKey;
-
-  const baseURL =
-    cliBaseUrl ||
-    process.env.TRANSCRIBE_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
-    fileConfig.baseURL ||
-    undefined;
-
-  const model =
-    cliModel ||
-    process.env.TRANSCRIBE_MODEL ||
-    fileConfig.model ||
-    (openaiKey ? "whisper-1" : "google/gemini-3.7-flash");
-
-  if (!apiKey) {
-    throw new Error(
-      "API key not found.\n\n" +
-        "🔑 Get your API key:\n" +
-        "   • OpenAI: https://platform.openai.com/api-keys\n" +
-        "   • OpenRouter: https://openrouter.ai/keys\n\n" +
-        "Then set it using ONE of these methods:\n\n" +
-        "1️⃣  Environment variable:\n" +
-        "   export OPENAI_API_KEY=sk-...\n" +
-        "   # Or for OpenRouter:\n" +
-        "   export OPENROUTER_API_KEY=sk-or-...\n" +
-        "   export OPENAI_BASE_URL=https://openrouter.ai/api/v1\n\n" +
-        "2️⃣  Config file (recommended for permanent setup):\n" +
-        "   mkdir -p ~/.transcribe\n" +
-        '   echo \'{"apiKey": "sk-..."}\' > ~/.transcribe/config.json\n\n' +
-        "💡 Tip: If you set both OPENAI_API_KEY and OPENROUTER_API_KEY, transcribe automatically mixes them (Whisper-1 for frame-accurate timing + Gemini 3.7 Flash for deep context autofix & diarization)!\n\n" +
-        "📚 Full setup guide: https://github.com/Illyism/transcribe-cli#configuration"
-    );
-  }
-
-  return { apiKey, baseURL, model };
-}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -176,7 +102,6 @@ async function promptFolderSelection(files: string[]): Promise<string[]> {
 }
 
 interface CliOptions {
-  useRaw: boolean;
   outputArg: string | null;
   offsetSeconds?: number;
   chunkMinutes?: number;
@@ -189,7 +114,6 @@ interface CliOptions {
 
 async function transcribeOne(
   input: string,
-  apiKey: string,
   options: CliOptions,
   outputOverride?: string
 ): Promise<{
@@ -202,7 +126,6 @@ async function transcribeOne(
   let downloadedFile: string | null = null;
   let remoteMediaSlug: string | null = null;
   let screenStudioSlug: string | null = null;
-  let isScreenStudio = false;
   let outputPath: string | undefined = outputOverride;
 
   const inputKind = resolveInputKind(input);
@@ -218,7 +141,6 @@ async function transcribeOne(
         outputPath = join(process.cwd(), `${remoteMediaSlug}.srt`);
       }
     } else if (inputKind === "screenstudio") {
-      isScreenStudio = true;
       screenStudioSlug = getScreenStudioSlug(input);
       downloadedFile = await extractScreenStudioAudio(input);
       inputPath = downloadedFile;
@@ -243,12 +165,10 @@ async function transcribeOne(
 
     return await transcribe({
       inputPath,
-      apiKey,
       baseURL: options.baseURL,
       model: options.model,
       autofix: options.autofix,
       diarize: options.diarize,
-      optimize: isScreenStudio ? false : !options.useRaw,
       outputPath,
       offsetSeconds: options.offsetSeconds,
       chunkMinutes: options.chunkMinutes,
@@ -280,20 +200,37 @@ function printResult(result: {
 async function main() {
   const args = process.argv.slice(2);
 
+  // Subcommands, unless a file or folder with that name exists
+  const subcommand = args[0];
+  if (subcommand && !existsSync(subcommand)) {
+    if (subcommand === "setup") {
+      process.exit((await runSetup()) ? 0 : 1);
+    }
+    if (subcommand === "doctor" || subcommand === "config") {
+      process.exit((await runDoctor()) ? 0 : 1);
+    }
+  }
+
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     console.log(`
 Transcribe - Audio/Video to SRT
 
 Usage: transcribe <path-to-file-url-or-folder> [options]
+       transcribe setup     Save your API key (one paste, provider auto-detected)
+       transcribe doctor    Show which keys, tools and models will be used
 
 Options:
   -h, --help              Show this help message
   -v, --version           Show version
-  -m, --model <model>     Model name (default: whisper-1, or TRANSCRIBE_MODEL)
-  --base-url <url>        Base URL for OpenAI-compatible API (e.g. OpenRouter, LiteLLM)
-  --autofix [model]       2-Pass LLM cleanup & diarization (auto: gpt-5.6-luna on OpenAI, gemini on OpenRouter)
+  -m, --model <model>     whisper (default with an OpenAI key), gemini, or any model id
+                          Models with a slash (google/gemini-3.7-flash) go to OpenRouter
+  --autofix [model]       2-Pass LLM cleanup & diarization (Gemini with an OpenRouter key,
+                          gpt-5.6-luna otherwise). Cleanup runs by default when both
+                          an OpenAI and an OpenRouter key are set
+  --no-autofix            Skip the cleanup pass
+  --diarize               Add speaker labels (on by default with an explicit --autofix)
   --no-diarize            Disable automatic speaker diarization during autofix
-  --raw                   Disable optimizations (use original audio)
+  --base-url <url>        Other OpenAI-compatible endpoint (Groq, LiteLLM, self-hosted)
   -o, --output <path>     Output .srt path (file) OR output directory (folder)
   --offset <time>         Shift subtitle timestamps (seconds or HH:MM:SS.mmm)
   --chunk-minutes <min>   Force chunking into N-minute pieces (helps long movies)
@@ -304,6 +241,7 @@ Options:
 Examples:
   transcribe video.mp4
   transcribe audio.mp3 --autofix
+  transcribe audio.mp3 --model gemini
   transcribe audio.mp3 --autofix google/gemini-3.7-flash
   transcribe podcast.mp3 --autofix --no-diarize
   transcribe /path/to/podcast.wav
@@ -312,25 +250,16 @@ Examples:
   transcribe https://www.instagram.com/reel/SHORTCODE/
   transcribe https://x.com/MTSlive/status/2059310566783467782
   transcribe recording.screenstudio
-  transcribe large-video.mp4 --raw
   transcribe movie.mkv --offset 01:00:00.000
   transcribe movie.mkv --output ./subs
   transcribe long_movie.mkv --chunk-minutes 15
   transcribe audio.mp3 --model whisper-large-v3 --base-url https://api.groq.com/openai/v1
-  transcribe audio.mp3 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1
   transcribe https://www.instagram.com/reel/SHORTCODE/ --cookies-from-browser chrome
 
 Folders:
   • Pass a folder to bulk-transcribe media inside it
   • Interactive prompt: select all, or choose files individually
   • Each .srt is written next to its source file (or into -o)
-
-Optimizations (enabled by default for files >= 5 minutes, except Screen Studio):
-  • 1.2x speed: Faster processing for files 5 minutes or longer
-  • Files under 5 minutes use original (raw) audio automatically
-  • Automatic timestamp adjustment to original speed
-  • Use --raw to force original audio on all files
-  • Screen Studio recordings always use original audio
 
 Chunking (always enabled):
   • Media is split into ~20 minute chunks by default for reliability
@@ -341,8 +270,9 @@ Remote URLs: YouTube, Instagram Reels/posts, X/Twitter, and other yt-dlp sites
   • Instagram usually needs a logged-in browser (cookies auto-detected)
 
 Configuration:
-  Set OPENAI_API_KEY / OPENROUTER_API_KEY environment variable or create ~/.transcribe/config.json
-  Optionally set OPENAI_BASE_URL / TRANSCRIBE_BASE_URL and TRANSCRIBE_MODEL
+  Run: transcribe setup   (or export OPENAI_API_KEY / OPENROUTER_API_KEY)
+  One key is enough. With both, Whisper handles timing and Gemini cleans up the text.
+  Each model is sent to its own provider with the matching key; no base URL needed.
     `);
     process.exit(0);
   }
@@ -359,7 +289,6 @@ Configuration:
   }
 
   let input: string | null = null;
-  let useRaw = false;
   let outputArg: string | null = null;
   let offsetSeconds: number | undefined;
   let chunkMinutes: number | undefined;
@@ -372,10 +301,8 @@ Configuration:
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if (arg === "--raw") {
-      useRaw = true;
-      continue;
-    }
+    // Accepted for old scripts; audio is always transcribed at original speed
+    if (arg === "--raw") continue;
 
     if (arg === "--diarize") {
       diarize = true;
@@ -384,6 +311,11 @@ Configuration:
 
     if (arg === "--no-diarize" || arg === "--noDiarize") {
       diarize = false;
+      continue;
+    }
+
+    if (arg === "--no-autofix") {
+      autofix = false;
       continue;
     }
 
@@ -491,18 +423,30 @@ Configuration:
     process.exit(1);
   }
 
-  const { apiKey, baseURL, model } = getConfig(cliModel, cliBaseUrl);
+  // Fail (or onboard) before downloading or extracting anything
+  const settingsInput = { model: cliModel, baseURL: cliBaseUrl, autofix, diarize };
+  try {
+    resolveSettings(settingsInput);
+  } catch (error) {
+    const interactive = process.stdin.isTTY && process.stdout.isTTY;
+    if (error instanceof MissingKeyError && interactive) {
+      if (!(await runSetup())) process.exit(1);
+      resolveSettings(settingsInput);
+    } else {
+      console.error(
+        "Error:",
+        error instanceof Error ? error.message : String(error)
+      );
+      process.exit(1);
+    }
+  }
 
   const options: CliOptions = {
-    useRaw,
     outputArg,
     offsetSeconds,
     chunkMinutes,
     cookiesFromBrowser,
-    model,
-    baseURL,
-    autofix,
-    diarize,
+    ...settingsInput,
   };
 
   try {
@@ -563,7 +507,6 @@ Configuration:
 
           const result = await transcribeOne(
             filePath,
-            apiKey,
             options,
             outputPath
           );
@@ -593,7 +536,7 @@ Configuration:
       return;
     }
 
-    const result = await transcribeOne(input, apiKey, options);
+    const result = await transcribeOne(input, options);
     printResult(result);
   } catch (error) {
     console.error(

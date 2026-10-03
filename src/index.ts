@@ -7,12 +7,15 @@ export interface TranscribeOptions {
   apiKey?: string
   baseURL?: string
   model?: string
+  /**
+   * LLM cleanup pass. Defaults to on when both an OpenAI and an OpenRouter key
+   * are available; pass false to disable.
+   */
   autofix?: boolean | string
   refineModel?: string
   diarize?: boolean
   inputPath: string
   outputPath?: string
-  optimize?: boolean
   /**
    * Shift all subtitle timestamps by this many seconds (useful for editor timecode offsets).
    * Example: 3600 = start captions at 01:00:00,000

@@ -46,9 +46,52 @@ export function transformSegments(
   }))
 }
 
+export function wordsFromTranscription(transcription: {
+  words?: WhisperWord[]
+  segments?: Array<{ words?: WhisperWord[] }>
+}): WhisperWord[] {
+  if (transcription.words && transcription.words.length > 0) {
+    return transcription.words
+  }
+
+  return transcription.segments?.flatMap((segment) => segment.words ?? []) ?? []
+}
+
+function joinCaptionWords(words: WhisperWord[]): string {
+  return words
+    .map((item) => (item.word || '').trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
+const HOST_TLDS = new Set(['com', 'co', 'io', 'ai', 'net', 'org', 'app', 'dev'])
+
+function stripCuePunctuation(token: string): string {
+  return token.replace(/^[.]+/, '').replace(/[.,!?…]+$/, '')
+}
+
+/** Keep "picspot" + "co" in one cue so autofix can write PicSpot.co. */
+export function nextWordIsHostTld(currentWord: string, nextWord: string): boolean {
+  const host = stripCuePunctuation(currentWord).toLowerCase()
+  const tld = stripCuePunctuation(nextWord).toLowerCase()
+  return HOST_TLDS.has(tld) && /^[a-z0-9][a-z0-9-]{1,62}$/.test(host)
+}
+
+/** Map LLM cue text onto Whisper timings. Null if the model dropped or invented cues. */
+export function applyRefinedCueTexts(
+  original: WhisperSegment[],
+  refined: WhisperSegment[]
+): WhisperSegment[] | null {
+  if (refined.length !== original.length) return null
+  return original.map((segment, index) => ({
+    ...segment,
+    text: refined[index].text,
+  }))
+}
+
 /**
- * Group a word-level timing array into subtitle segments based on punctuation
- * and pauses between words.
+ * Group a word-level timing array into caption-length subtitle cues.
+ * Defaults target ~8 words / ~3.5s so on-screen captions stay readable.
  */
 export function synthesizeSegmentsFromWords(
   words: WhisperWord[],
@@ -62,9 +105,9 @@ export function synthesizeSegmentsFromWords(
     return []
   }
 
-  const maxGap = options?.maxGapSeconds ?? 1.2
-  const maxDuration = options?.maxDurationSeconds ?? 6.0
-  const maxWords = options?.maxWordsPerSegment ?? 14
+  const maxGap = options?.maxGapSeconds ?? 0.75
+  const maxDuration = options?.maxDurationSeconds ?? 3.5
+  const maxWords = options?.maxWordsPerSegment ?? 8
 
   const segments: WhisperSegment[] = []
   let currentWords: WhisperWord[] = []
@@ -82,16 +125,23 @@ export function synthesizeSegmentsFromWords(
     const endsWithTerminalPunctuation = /[.!?…]$/.test(trimmedWord)
     const endsWithClausePunctuation = /[,;:]$/.test(trimmedWord)
 
+    const nextTrimmed = nextWord ? (nextWord.word || '').trim() : ''
+    const keepHostWithTld =
+      Boolean(nextWord) &&
+      gapToNext < maxGap &&
+      nextWordIsHostTld(trimmedWord, nextTrimmed)
+
     const shouldSplit =
-      !nextWord ||
-      gapToNext >= maxGap ||
-      currentDuration >= maxDuration ||
-      currentWords.length >= maxWords ||
-      endsWithTerminalPunctuation ||
-      (endsWithClausePunctuation && currentDuration >= 3.0)
+      !keepHostWithTld &&
+      (!nextWord ||
+        gapToNext >= maxGap ||
+        currentDuration >= maxDuration ||
+        currentWords.length >= maxWords ||
+        endsWithTerminalPunctuation ||
+        (endsWithClausePunctuation && (currentWords.length >= 4 || currentDuration >= 2.0)))
 
     if (shouldSplit) {
-      const text = currentWords.map((item) => item.word).join(' ').trim()
+      const text = joinCaptionWords(currentWords)
       segments.push({
         id: segmentId++,
         seek: Math.round(segmentStart * 100),
@@ -176,15 +226,13 @@ export function parseSRT(srtContent: string): WhisperSegment[] {
 }
 
 /**
- * Chunk timestamps are local to a chunk of sped-up audio. Map them back onto the
- * original recording's timeline: shift by the chunk's position, undo the speed-up,
- * then apply the user's offset.
+ * Chunk timestamps are local to their chunk. Map them onto the recording's
+ * timeline: shift by the chunk's position, then apply the user's offset.
  */
 export function toOriginalTimeline(options: {
   chunkOffsetSeconds: number
-  speedFactor: number
   offsetSeconds: number
 }): (seconds: number) => number {
-  const { chunkOffsetSeconds, speedFactor, offsetSeconds } = options
-  return (seconds) => (seconds + chunkOffsetSeconds) * speedFactor + offsetSeconds
+  const { chunkOffsetSeconds, offsetSeconds } = options
+  return (seconds) => seconds + chunkOffsetSeconds + offsetSeconds
 }

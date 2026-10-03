@@ -13,8 +13,8 @@ Transcribe audio/video files to SRT subtitles in one command. Optimized for larg
 # 1. Try it instantly (no install needed)
 npx @illyism/transcribe video.mp4
 
-# 2. Set your OpenAI API key (one-time setup)
-export OPENAI_API_KEY=sk-...
+# 2. Paste your OpenAI or OpenRouter key (one-time setup)
+npx @illyism/transcribe setup
 
 # 3. Transcribe anything
 npx @illyism/transcribe video.mp4
@@ -68,7 +68,7 @@ This tool:
 - 🎥 **YouTube & Social Video**: Download and transcribe YouTube, Instagram Reels, and X/Twitter videos directly
 - 🎯 **High Accuracy**: Powered by OpenAI's Whisper API + optional 2-Pass AI Autofix (`--autofix`)
 - 👥 **Speaker Diarization**: Automatically labels speaker turns (`[Speaker 1]: ...`, `[Speaker 2]: ...`)
-- 📝 **SRT Format**: Generates standard SRT subtitle files with frame-accurate timestamps
+- 📝 **SRT Format**: Caption-length cues (~8 words / 2–4 seconds) with frame-accurate word timestamps
 - 🎞️ **Long Movies**: Automatic chunking for feature-length content (45+ minutes), transcribed in parallel
 - 🎬 **Editor-Friendly**: Timecode offset, custom output paths, chunk size control
 - 🌐 **OpenAI-Compatible Gateways**: Connect to OpenRouter, LiteLLM, Groq, or self-hosted models
@@ -207,38 +207,31 @@ pip install yt-dlp
 
 ## API Key Setup (30 seconds)
 
-**One-time setup** - Choose your preferred method:
-
-### Method 1: Config File (Recommended)
-
 ```bash
-mkdir -p ~/.transcribe && echo '{"apiKey": "sk-YOUR_KEY"}' > ~/.transcribe/config.json
+transcribe setup
 ```
 
-**Dual-Key Supercharging (Auto-Mixing):**
-If you have both keys, you can add them to `~/.transcribe/config.json`:
-```json
-{
-  "openaiApiKey": "sk-...",
-  "openrouterApiKey": "sk-or-..."
-}
-```
-`@illyism/transcribe` will automatically route Pass 1 through **Whisper-1** (for frame-accurate timestamps) and Pass 2 through **Gemini 3.7 Flash** (for deep context jargon fixing and multi-speaker diarization)!
+Paste one key. The provider is detected from the key, checked against the API, and saved to `~/.transcribe/config.json`. Running `transcribe video.mp4` without a key starts the same prompt.
 
-### Method 2: Environment Variables
+Prefer environment variables? Either one is enough:
 
 ```bash
-# Standard OpenAI
-export OPENAI_API_KEY=sk-YOUR_KEY
+export OPENAI_API_KEY=sk-YOUR_KEY          # Whisper
+export OPENROUTER_API_KEY=sk-or-YOUR_KEY   # Gemini
+```
 
-# Or use OpenRouter / OpenAI-compatible gateways (LiteLLM, vLLM, Deepgram)
-export OPENROUTER_API_KEY=sk-or-YOUR_KEY
-export OPENAI_BASE_URL=https://openrouter.ai/api/v1
-export TRANSCRIBE_MODEL=google/gemini-2.5-flash
+| Keys you have | `transcribe video.mp4` | `--autofix` |
+| :--- | :--- | :--- |
+| OpenAI | `whisper-1` | `gpt-5.6-luna` |
+| OpenRouter | `google/gemini-3.7-flash` | `google/gemini-3.7-flash` |
+| Both | `whisper-1` (OpenAI), then Gemini cleanup | `google/gemini-3.7-flash` (OpenRouter) |
 
-# Or export BOTH for the best hybrid pipeline:
-export OPENAI_API_KEY=sk-YOUR_OPENAI_KEY
-export OPENROUTER_API_KEY=sk-or-YOUR_OPENROUTER_KEY
+With both keys the cleanup pass runs on every transcript (text fixes only, no speaker labels). Add `--autofix` for speaker labels, or `--no-autofix` to skip it.
+
+Each model goes to its own provider with the matching key. A model with a slash (`google/gemini-3.7-flash`) is an OpenRouter model, anything else is an OpenAI model. There is no base URL to set for either.
+
+```bash
+transcribe doctor   # shows your keys, tools, and which model each pass will use
 ```
 
 **Don't have a key?** [Get an OpenAI key](https://platform.openai.com/api-keys) or [OpenRouter key](https://openrouter.ai/keys).
@@ -260,8 +253,10 @@ transcribe podcast.mp3 --autofix gpt-5.6-luna
 # Disable automatic speaker labels
 transcribe podcast.mp3 --autofix --no-diarize
 
-# Custom model and endpoint (e.g. OpenRouter, LiteLLM, Groq)
-transcribe video.mp4 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1
+# Transcribe with Gemini instead of Whisper (needs an OpenRouter key)
+transcribe video.mp4 --model gemini
+
+# Other OpenAI-compatible endpoints (Groq, LiteLLM, self-hosted)
 transcribe video.mp4 --model whisper-large-v3 --base-url https://api.groq.com/openai/v1
 
 # YouTube video
@@ -273,9 +268,6 @@ transcribe https://www.instagram.com/reel/SHORTCODE/ --cookies-from-browser chro
 
 # Audio file
 transcribe podcast.mp3
-
-# Disable optimization (use original audio)
-transcribe video.mp4 --raw
 ```
 
 **Outputs:** Creates `video.srt` in the same directory.
@@ -301,7 +293,7 @@ transcribe long_movie.mkv --chunk-minutes 15
 
 ### What Happens Automatically
 
-By default, the tool optimizes large video and audio files:
+Audio is always transcribed at its original speed:
 
 ```
 2.7GB video → Extract speech audio (mono, 16kHz) → Auto-chunk if >45min → Transcribe chunks in parallel → Merge & adjust timestamps
@@ -314,8 +306,8 @@ By default, the tool optimizes large video and audio files:
 - Handles 2+ hour movies reliably
 
 **2-Pass Hybrid Pipeline (`--autofix`):**
-- **Pass 1**: Whisper-1 generates frame-accurate subtitle timing anchors.
-- **Pass 2**: Multimodal AI (Gemini Flash) fixes domain jargon, acronyms, and names, and adds speaker labels (`[Speaker 1]`, `[Speaker 2]`).
+- **Pass 1**: Whisper-1 word timestamps, rebuilt into caption-length cues (~8 words / ~3.5s). Hostname + TLD stay in one cue (`picspot co` → autofix can write `PicSpot.co`).
+- **Pass 2**: Gemini Flash (or the model you pass) proofreads brands and punctuation in batches of 40 cues, up to 4 at a time. Each batch is sent only its own stretch of audio. If a batch returns the wrong cue count, that batch keeps the original text — timings are never replaced. Speaker labels are on by default; pass `--no-diarize` for on-screen captions.
 
 **Result:** 
 - ⚡ 99.5% smaller uploads (2.7GB → ~20MB audio)
@@ -334,8 +326,7 @@ import { transcribe } from '@illyism/transcribe'
 
 const result = await transcribe({
   inputPath: 'video.mp4',
-  apiKey: process.env.OPENAI_API_KEY,
-  optimize: true // default, set false to disable
+  // Keys come from OPENAI_API_KEY / OPENROUTER_API_KEY or ~/.transcribe/config.json
 })
 
 console.log(result.srtPath)  // Path to generated SRT file
@@ -351,8 +342,9 @@ interface TranscribeOptions {
   apiKey?: string         // OpenAI / OpenRouter API key (or use env var)
   baseURL?: string        // Custom base URL for OpenAI-compatible endpoints
   model?: string          // Model name (default: "whisper-1")
+  autofix?: boolean | string // LLM cleanup pass (default: on when both keys are set)
+  diarize?: boolean       // Speaker labels during autofix
   outputPath?: string     // Custom output path (optional)
-  optimize?: boolean      // Enable optimization (default: true)
   offsetSeconds?: number  // Shift timestamps by N seconds
   chunkMinutes?: number   // Chunk size in minutes (default: 20)
 }
@@ -396,8 +388,8 @@ Examples:
 1. Extract audio from video (mono, 16kHz - speech optimized)
 2. Auto-chunk if >45 minutes (for parallel processing and reliability)
 3. Upload chunks to Whisper API (or OpenAI-compatible gateway)
-4. Generate SRT subtitles with frame-accurate timestamps
-5. Optional 2-pass AI Autofix (`--autofix`): Corrects domain jargon & adds speaker diarization
+4. Rebuild caption-length SRT cues from word timestamps (~8 words / ~3.5s)
+5. Optional 2-pass AI Autofix (`--autofix`): batched brand/punctuation fix; `--no-diarize` for captions
 6. Merge chunks and apply timecode offsets (if specified)
 7. Clean up temporary files
 </details>
@@ -407,21 +399,21 @@ Examples:
 
 ```srt
 1
-00:00:00,000 --> 00:00:03,420
-Hey and thank you for getting the SEO roast.
+00:00:00,000 --> 00:00:02,500
+Hey everyone, welcome to another SEO roast. Today
 
 2
-00:00:03,420 --> 00:00:06,840
-I'll take a look at your website and see what things we can improve.
+00:00:02,500 --> 00:00:04,180
+I'm going to take a look at PicSpot.co
 ```
 </details>
 
 ## Troubleshooting
 
 <details>
-<summary><b>"OPENAI_API_KEY not found"</b></summary>
+<summary><b>"No API key found" / 401 errors</b></summary>
 
-Set up your API key using one of the methods in [API Key Setup](#api-key-setup-30-seconds).
+Run `transcribe setup` to save a key, then `transcribe doctor` to check that each key is valid and see which model each pass will use.
 </details>
 
 <details>

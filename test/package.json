@@ -6,6 +6,7 @@
   "scripts": {
     "eval": "bun eval.ts",
     "eval:matrix": "bun eval.ts --matrix",
+    "eval:full": "bun eval.ts --matrix --full",
     "test": "bun eval.ts"
   },
   "keywords": [
