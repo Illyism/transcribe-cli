@@ -8,7 +8,7 @@
 Transcribe audio/video files to SRT subtitles in one command. Optimized for large files, long movies, and video editing workflows.
 
 > **New: [Scribiz](https://scribiz.com?ref=transcribe-cli), from the maker of this CLI.**
-> Paste a link or drop a file and get the transcript, what was on screen, a summary and chapters. It works when a video has no captions, or no speech at all. Launching now as a web tool, a Mac app and an MCP server for AI agents, with one key instead of two.
+> Paste a link or drop a file and get the transcript, what was on screen, a summary and chapters. It works when a video has no captions, or no speech at all. Live now as a web tool and an MCP server for AI agents. A Mac app is on the way.
 > This CLI stays free and open source.
 
 ## Quick Start
