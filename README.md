@@ -1,4 +1,6 @@
-# @illyism/transcribe
+<a href="https://scribiz.com?ref=transcribe-cli"><img src="https://raw.githubusercontent.com/Illyism/transcribe-cli/main/.github/scribiz.jpg" alt="Scribiz: transcript generator for any video. Paste a link or drop a file and get the transcript, what was on screen, a summary and chapters." width="100%"></a>
+
+# Transcribe CLI: audio and video to SRT subtitles (@illyism/transcribe)
 
 [![npm version](https://img.shields.io/npm/v/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
 [![npm downloads](https://img.shields.io/npm/dt/@illyism/transcribe.svg)](https://www.npmjs.com/package/@illyism/transcribe)
@@ -8,7 +10,7 @@
 Transcribe audio/video files to SRT subtitles in one command. Optimized for large files, long movies, and video editing workflows.
 
 > **New: [Scribiz](https://scribiz.com?ref=transcribe-cli), from the maker of this CLI.**
-> Paste a link or drop a file and get the transcript, what was on screen, a summary and chapters. It works when a video has no captions, or no speech at all. Live now as a web tool and an MCP server for AI agents. A Mac app is on the way.
+> Paste a link or drop a file and get the transcript, what was on screen, a summary and chapters. It works when a video has no captions, or no speech at all. Live now as a web tool, a Mac app and an MCP server for AI agents.
 > This CLI stays free and open source.
 
 ## Quick Start
