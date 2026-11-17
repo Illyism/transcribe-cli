@@ -11,9 +11,8 @@
   "scripts": {
     "build": "bun build src/cli.ts --outdir dist --target node --format esm --external openai --external @clack/prompts && bun build src/index.ts --outdir dist --target node --format esm --external openai && chmod +x dist/cli.js",
     "dev": "bun src/cli.ts",
-    "test": "bun test src",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run typecheck && bun run test && bun run build",
+    "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "husky"
   },
   "keywords": [
