@@ -1,0 +1,3 @@
+#!/bin/sh
+# No formatter or linter in this repo: the hook is the typecheck, run only when staged files can change its result.
+bun scripts/pre-commit-checks.mjs || exit 1
